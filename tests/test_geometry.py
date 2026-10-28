@@ -557,11 +557,14 @@ def test_replace_revalidates():
 
 
 def test_repr_is_compact_and_hides_defaults():
-    assert repr(Vector3(1, 2, 3)) == "Vector3(x=1, y=2, z=3)"
+    assert repr(Vector3(1, 2, 3)) == "Vector3(x=1.0, y=2.0, z=3.0)"
     assert repr(Pose()) == "Pose()"
-    assert repr(Twist(linear=Vector3(1, 0, 0))) == "Twist(linear=Vector3(x=1, y=0, z=0))"
+    assert repr(Twist(linear=Vector3(1, 0, 0))) == "Twist(linear=Vector3(x=1.0, y=0.0, z=0.0))"
     assert "child_frame_id='tool'" in repr(TransformStamped(Header(0.0, "map"), "tool"))
-    assert len(repr(Transform.from_xyz_rpy(1, 2, 3, 0.1, 0.2, 0.3))) < 140
+    # Floats print exactly, so the repr of a value rebuilds that same value.
+    transform = Transform.from_xyz_rpy(1, 2, 3, 0.1, 0.2, 0.3)
+    namespace = {"Transform": Transform, "Vector3": Vector3, "Quaternion": Quaternion}
+    assert eval(repr(transform), namespace) == transform
 
 
 def test_hashes_are_stable_for_dict_keys():

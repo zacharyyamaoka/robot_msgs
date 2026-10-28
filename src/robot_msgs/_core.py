@@ -62,6 +62,34 @@ def optional_array(value: Any, dtype: Any = np.float64) -> np.ndarray | None:
     return None if value is None else frozen_array(value, dtype)
 
 
+class FrozenDict(Mapping):
+    """A read-only dict for mapping-valued fields (`channels`).
+
+    WHY not `types.MappingProxyType`: a proxy can't be pickled, so messages holding one could
+    not cross a process boundary (multiprocessing, ray) or be deep-copied.
+    """
+
+    __slots__ = ("_data",)
+
+    def __init__(self, data: Any = ()) -> None:
+        self._data = dict(data)
+
+    def __getitem__(self, key: Any) -> Any:
+        return self._data[key]
+
+    def __iter__(self) -> Any:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __repr__(self) -> str:
+        return f"FrozenDict({self._data!r})"
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (FrozenDict, (self._data,))
+
+
 def set_field(msg: Msg, name: str, value: Any) -> None:
     """Normalise a field inside `__post_init__` of a frozen dataclass."""
     object.__setattr__(msg, name, value)
@@ -183,7 +211,8 @@ def short_repr(value: Any) -> str:
         head = ", ".join(short_repr(v) for v in value[:3])
         return f"({head}, … {len(value) - 3} more)"
     if isinstance(value, float):
-        return f"{value:.6g}"
+        # WHY repr, not a rounded format: a stamp like 1761600000.25 must print as itself.
+        return repr(value)
     return repr(value)
 
 
