@@ -20,14 +20,8 @@ def main(bag: Path) -> None:
     tool = tool_trajectory(joints)
 
     ros_traj = to_ros(joints, drop_extras=True)  # ROS has no slot for the gripper channel or limits
-    print(
-        ros_type(joints),
-        "with",
-        len(ros_traj.points),
-        "points;",
-        "point[250].time_from_start =",
-        ros_traj.points[250].time_from_start,
-    )
+    duration = ros_traj.points[250].time_from_start
+    print(f"{ros_type(joints)} with {len(ros_traj.points)} points;", "point[250]:", duration)
     try:
         to_ros(joints)
     except ValueError as refusal:

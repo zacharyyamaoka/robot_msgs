@@ -11,7 +11,6 @@ from __future__ import annotations
 import base64
 import html
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -66,7 +65,7 @@ def import_probe() -> str:
     probe = (
         "import sys, robot_msgs; "
         "print(sorted({m.split('.')[0] for m in sys.modules if not m.startswith('_')} "
-        "- set(sys.stdlib_module_names)))"
+        "- set(sys.stdlib_module_names) - {'robot_msgs', 'sitecustomize'}))"
     )
     env = {"PYTHONPATH": str(REPO / "src")}
     result = subprocess.run(
@@ -96,32 +95,92 @@ def pick_output() -> str:
 
 
 def ros_output() -> str:
+    """Output first; the code one click away (it is long, the output is the point)."""
     bag = Path(tempfile.mkdtemp()) / "pick_bag"
     source = (REPO / "examples" / "ros_export.py").read_text()
     body = source.split('"""', 2)[2].strip()
+    output = run(sys.executable, "examples/ros_export.py", str(bag))
     return (
-        code(body)
-        + "<p class='label'>Real output</p>"
-        + code(run(sys.executable, "examples/ros_export.py", str(bag)))
+        "<p class='label'>Real output of <code>examples/ros_export.py</code></p>"
+        + code(output)
+        + "<details><summary>The code</summary>"
+        + code(body)
+        + "</details>"
     )
+
+
+GALLERY_ORDER = {  # file stem: (the call, what it shows)
+    "ur5e_joints": (
+        "plot(joints, waypoints=waypoints)",
+        "UR5e JointTrajectory with named waypoints, ±limits and the gripper channel",
+    ),
+    "ur5e_tool": (
+        "plot(tool)",
+        "tool0 PoseTrajectory from FK: 3-D path with orientation triads, xyz and "
+        "roll/pitch/yaw over time (the tool stays pointing down, so orientation is flat)",
+    ),
+    "joint_state": (
+        "plot(joints.joint_state_at(2.4), limits=...)",
+        "the commanded JointState at the grasp, inside its position limits",
+    ),
+    "image_detections": (
+        "plot(image, detections=detections)",
+        "Image with a Detection2DArray: boxes, classes, scores",
+    ),
+    "point_cloud_rgb": (
+        "plot(PointCloud.from_depth(depth, info, rgb))",
+        "a cloud back-projected from a 16UC1 depth image, coloured by the RGB frame",
+    ),
+    "point_cloud": ("plot(cloud)", "the same depth image without colour: coloured by height"),
+    "detections_3d": ("plot(detections_3d)", "Detection3DArray: oriented 3-D boxes"),
+    "camera_info": ("plot(camera_info)", "CameraInfo: image rectangle and principal point"),
+    "pose_stamped": ("plot(pose_stamped)", "PoseStamped as a frame triad"),
+}
+WIDE = {"ur5e_joints", "ur5e_tool"}  # multi-panel plots get the full width
+
+
+def webp_uri(png: Path) -> str:
+    """Plots embed as lossless-looking WebP: a third of the PNG bytes, so the page previews."""
+    from PIL import Image as PILImage
+
+    out = png.with_suffix(".webp")
+    PILImage.open(png).convert("RGB").save(out, "WEBP", quality=88, method=6)
+    return f"data:image/webp;base64,{base64.b64encode(out.read_bytes()).decode()}"
 
 
 def gallery() -> tuple[str, str]:
     GALLERY.mkdir(parents=True, exist_ok=True)
     run(sys.executable, "examples/gallery.py", str(GALLERY))
-    hero_mp4, hero_gif = GALLERY / "hero.mp4", GALLERY / "hero.gif"
+    hero_mp4 = GALLERY / "hero.mp4"
+    fallback = GALLERY / "hero_small.gif"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(hero_mp4),
+            "-vf",
+            "fps=8,scale=560:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=48[p];[b][p]paletteuse",
+            str(fallback),
+        ],
+        check=True,
+    )
     hero = (
-        f"<video autoplay muted loop playsinline controls poster='' src='{data_uri(hero_mp4)}'>"
-        f"<img src='{data_uri(hero_gif)}' alt='hero animation'></video>"
-        if hero_mp4.exists()
-        else f"<img src='{data_uri(hero_gif)}' alt='hero animation'>"
+        f"<video autoplay muted loop playsinline controls src='{data_uri(hero_mp4)}'>"
+        f"<img src='{data_uri(fallback)}' alt='hero animation'></video>"
     )
     figures = []
-    for png in sorted(GALLERY.glob("*.png")):
-        title = re.sub(r"^\d+[-_]", "", png.stem).replace("_", " ").replace("-", " ")
+    for stem, (call, caption) in GALLERY_ORDER.items():
+        png = GALLERY / f"{stem}.png"
+        if not png.exists():
+            raise SystemExit(f"gallery did not produce {png}")
         figures.append(
-            f"<figure><img loading='lazy' src='{data_uri(png)}' alt='{html.escape(title)}'>"
-            f"<figcaption><code>plot()</code> · {html.escape(title)}</figcaption></figure>"
+            f"<figure class='{'wide' if stem in WIDE else ''}'>"
+            f"<img loading='lazy' src='{webp_uri(png)}' alt='{html.escape(caption)}'>"
+            f"<figcaption><code>{html.escape(call)}</code><br>{html.escape(caption)}"
+            "</figcaption></figure>"
         )
     return hero, "\n".join(figures)
 
