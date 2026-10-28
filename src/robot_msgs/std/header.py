@@ -34,15 +34,24 @@ class Header(Msg):
 
     @classmethod
     def from_ns(cls, stamp_ns: int, frame_id: str = "") -> Header:
-        return cls(stamp=stamp_ns / 1e9, frame_id=frame_id)
+        # int / int is correctly rounded; `stamp_ns / 1e9` would round twice.
+        return cls(stamp=int(stamp_ns) / 1_000_000_000, frame_id=frame_id)
 
     @property
     def stamp_ns(self) -> int:
-        return round(self.stamp * 1e9)
+        sec, nanosec = self.to_sec_nanosec()
+        return sec * 1_000_000_000 + nanosec
 
     def to_sec_nanosec(self) -> tuple[int, int]:
-        """ROS builtin_interfaces/Time split."""
-        sec, nanosec = divmod(self.stamp_ns, 1_000_000_000)
+        """ROS builtin_interfaces/Time split.
+
+        WHY split before scaling: ``stamp * 1e9`` near today's epoch is ~1.76e18, where float64
+        steps by 256 ns. ``stamp - floor(stamp)`` is exact, so only the fraction is rounded.
+        """
+        sec = math.floor(self.stamp)
+        nanosec = round((self.stamp - sec) * 1e9)
+        if nanosec == 1_000_000_000:
+            sec, nanosec = sec + 1, 0
         return sec, nanosec
 
     @classmethod

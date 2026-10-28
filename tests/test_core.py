@@ -105,5 +105,17 @@ def test_header_time_helpers():
         Header(stamp=float("nan"))
 
 
+def test_nanosecond_conversions_are_exact_where_the_float_is():
+    """Regression: these went through stamp * 1e9 and lost up to 256 ns at today's epoch."""
+    assert Header(1761600000.25).to_sec_nanosec() == (1761600000, 250_000_000)
+    assert Header(1761600000.25).stamp_ns == 1_761_600_000_250_000_000
+    assert Header.from_ns(1_761_600_000_250_000_000).stamp == 1761600000.25
+    assert Header(-1.5).to_sec_nanosec() == (-2, 500_000_000)
+    for stamp in (0.0, 1e-9, 12.000000001, 1761600000.999999):
+        sec, nanosec = Header(stamp).to_sec_nanosec()
+        assert 0 <= nanosec < 1_000_000_000
+        assert Header.from_sec_nanosec(sec, nanosec).stamp == stamp
+
+
 def test_types_register_under_domain_names():
     assert message_types()["std/Header"] is Header
