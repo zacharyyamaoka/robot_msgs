@@ -69,3 +69,16 @@ def test_pose_at_uses_geometry_types():
     pose = spin().pose_at(1.0)
     assert isinstance(pose.position, Point) and isinstance(pose.orientation, Quaternion)
     assert pose.orientation.to_euler()[2] == pytest.approx(0.5, abs=1e-6)
+
+
+def test_spatial_offsets_match_the_single_pose_versions():
+    traj = spin(n=9)
+    for local in (False, True):
+        shifted = traj.shifted(0.01, -0.02, 0.1, local=local)
+        rotated = traj.rotated(0.1, 0.0, 0.3, local=local)
+        for i, pose in enumerate(traj.poses()):
+            expected = pose.shifted(0.01, -0.02, 0.1, local=local).to_matrix()
+            np.testing.assert_allclose(shifted.matrices()[i], expected, atol=1e-12)
+            expected = pose.rotated(0.1, 0.0, 0.3, local=local).to_matrix()
+            np.testing.assert_allclose(rotated.matrices()[i], expected, atol=1e-12)
+    assert traj.time_shifted(1.0).positions is traj.positions  # time shift leaves space alone

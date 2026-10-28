@@ -18,6 +18,7 @@ from robot_msgs.geometry.rotations import (
     matrix_to_pose,
     pose_to_matrix,
     quat_conjugate,
+    quat_from_euler,
     quat_multiply,
     quat_normalize,
     quat_rotate,
@@ -117,6 +118,25 @@ class PoseTrajectory(Trajectory):
             header=header,
             **rotated,
         )
+
+    def shifted(
+        self, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0, *, local: bool = False
+    ) -> PoseTrajectory:
+        """Every pose moved by ``(dx, dy, dz)``: along the reference axes, or along each pose's
+        own axes with ``local=True`` (an approach path offset along the tool)."""
+        offset = np.array([dx, dy, dz], dtype=np.float64)
+        if local:
+            offset = quat_rotate(self.orientations, np.broadcast_to(offset, self.positions.shape))
+        return self.replace(positions=self.positions + offset)
+
+    def rotated(
+        self, roll: float = 0.0, pitch: float = 0.0, yaw: float = 0.0, *, local: bool = False
+    ) -> PoseTrajectory:
+        """Every pose turned in place by ROS RPY, about the reference axes or its own."""
+        turn = quat_from_euler(roll, pitch, yaw)
+        if local:
+            return self.replace(orientations=quat_multiply(self.orientations, turn))
+        return self.replace(orientations=quat_multiply(turn, self.orientations))
 
     def path_length(self) -> float:
         """Distance travelled by the origin of the child frame, in metres."""

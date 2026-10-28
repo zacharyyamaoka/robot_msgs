@@ -1,8 +1,29 @@
 # robot_msgs — design contract (v1)
 
-The stable bottom tier: the vocabulary that flows between robot components. Everything above
-it (like_keras/Clank, bam_traj_gen, traj_compare, sim, drivers) can depend on it; it depends on
-nothing but numpy.
+A cohesive domain model for robot data: the vocabulary that flows between robot components,
+plus the functions that move between its parts. The parts are defined by each other, like a
+dictionary — a trajectory is poses over time, a pose is a point and an orientation in a frame,
+a point cloud comes from a depth image and its camera info — so the relationships ship with the
+types. It is the stable bottom tier: everything above it (like_keras/Clank, bam_traj_gen,
+traj_compare, sim, drivers) can depend on it, and it depends on nothing but numpy.
+
+## What we keep from ROS, and what we drop
+
+| Keep | Drop |
+|---|---|
+| The domain model: `geometry_msgs`, `sensor_msgs`, `trajectory_msgs`, `vision_msgs` — decades of agreement on what the nouns are | Behaviourless structs. Pose offsetting, interpolation, projection and FK-shaped batch maths were separate libraries (tf, image_geometry, …); here they are methods on the type |
+| Field names verbatim, so ROS docs are our docs and conversion is mechanical | Array-of-structs as the only storage: a `JointTrajectory` is not 500 point messages |
+| Every stamped message carries its time and frame (`Header`) | Code generation, a build system and a ROS install just to have a `Pose` |
+| Explicit frames (`frame_id`, `child_frame_id`) | Verbose construction (`msg.pose.pose.position.x = …`) and mutable messages |
+| Wire formats as an *export* (`robot_msgs.ros`) | The wire format as the programming model |
+
+## Scope
+
+- **In:** the standard vocabulary and the standard functions between its parts — offsets
+  (`pose.shifted(dz=-0.1, local=True)`), composition, interpolation, resampling, projection,
+  depth → cloud, joint trajectory → joint state, limit checks.
+- **Out:** business logic and non-standard types. The moment a type needs your application's
+  concepts (a bin, an order, a grasp score policy) it belongs in your code. See *Extending*.
 
 ## Principles (each one is a rule, with its reason)
 
@@ -25,7 +46,15 @@ nothing but numpy.
 6. **One type per file, named for the type** (`geometry/pose_stamped.py` → `PoseStamped`), plus
    any functions that operate on it. Each domain package re-exports its types in `__init__`.
 7. **Conventions are fixed and written down** (below), never inferred.
-8. **Runtime dependency: numpy only.** matplotlib (`[viz]`), rosbags (`[ros]`), scipy (tests,
+8. **The function decides how specific the type is.** A function that works on anything with
+   samples over time takes a `Trajectory` (`resample`, `window`, `plot`); one that needs joint
+   angles takes a `JointTrajectory`; one that needs poses takes a `PoseTrajectory`. The type is
+   validation: passing a `JointTrajectory` where a `PoseTrajectory` is required is an error, and
+   that is the point.
+9. **Methods that return a modified copy are named for the result**: `shifted`, `rotated`,
+   `normalized`, `rebased`, `time_shifted`, `time_scaled`, `transformed`, `with_*`. Spatial
+   words (`shifted`, `rotated`) move things in space; `time_*` moves them in time.
+10. **Runtime dependency: numpy only.** matplotlib (`[viz]`), rosbags (`[ros]`), scipy (tests,
    as an independent oracle) are extras. A boundary test enforces this.
 
 ## Conventions
@@ -133,3 +162,23 @@ traj.channels["kp"]     # any extra per-sample data you layer on top
   point type.
 - `t` is relative to `header.stamp`; `rebased()` moves `t[0]` to 0 and folds the offset into the
   stamp. Out-of-range interpolation raises unless `extrapolate="clamp"`.
+
+## Extending without forking
+
+1. **Extra per-sample data → `channels`.** Gains, feed-forward torque, controller mode,
+   temperature, a waypoint's name: `traj.with_channel("kp", kp)`. No new type needed.
+2. **A new kind of trajectory → subclass `Trajectory` in your own file** and declare its
+   `sample()` fields. Indexing, iteration, interpolation, resampling, plotting and serialisation
+   come for free:
+
+   ```python
+   @dataclass(frozen=True, eq=False, repr=False, kw_only=True)
+   class GripperTrajectory(Trajectory):
+       width: Array = sample()                                    # metres
+       grasping: Array | None = sample(default=None, interp="hold", dtype=bool)
+   ```
+3. **Business types → your own dataclasses that hold robot_msgs values** (composition). A
+   `GraspCandidate(target: Detection3D, approach: Pose, quality: float)` lives in your
+   application, not here.
+4. **A new standard type** (it exists in a ROS package and crosses a wire between domains) →
+   add it here, one file, with a catalog example; the contract tests then cover it.

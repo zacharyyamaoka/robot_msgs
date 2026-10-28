@@ -646,3 +646,34 @@ def test_package_reexports_every_type_and_the_rotation_module():
     }  # fmt: skip
     assert set(geometry.__all__) == expected
     assert all(hasattr(geometry, name) for name in expected)
+
+
+# ── ergonomic offsets (shifted / rotated) ──────────────────────────────────
+
+
+def test_shifted_moves_along_parent_or_own_axes():
+    tool_down = Pose.from_xyz_rpy(0.5, 0.0, 0.3, np.pi, 0.0, 0.0)  # tool z points at the table
+    assert tool_down.shifted(dz=0.1).position.as_array() == pytest.approx([0.5, 0.0, 0.4])
+    backed_off = tool_down.shifted(dz=-0.1, local=True)  # back off along the tool: upwards
+    assert backed_off.position.as_array() == pytest.approx([0.5, 0.0, 0.4])
+    assert backed_off.orientation == tool_down.orientation
+    expected = tool_down @ Pose(Point(0, 0, -0.1))
+    np.testing.assert_allclose(backed_off.to_matrix(), expected.to_matrix(), atol=1e-12)
+
+
+def test_rotated_turns_in_place_about_parent_or_own_axes():
+    pose = Pose.from_xyz_rpy(1.0, 2.0, 3.0, 0.3, -0.2, 0.1)
+    for local in (False, True):
+        turned = pose.rotated(yaw=0.4, local=local)
+        assert turned.position == pose.position
+    world = pose.rotated(yaw=0.4).orientation.to_matrix()
+    own = pose.rotated(yaw=0.4, local=True).orientation.to_matrix()
+    z_turn = Rotation.from_euler("z", 0.4).as_matrix()
+    np.testing.assert_allclose(world, z_turn @ pose.orientation.to_matrix(), atol=1e-12)
+    np.testing.assert_allclose(own, pose.orientation.to_matrix() @ z_turn, atol=1e-12)
+
+
+def test_stamped_offsets_keep_the_header():
+    stamped = PoseStamped.from_xyz_rpy(0, 0, 0, 0, 0, 0, frame_id="map", stamp=4.0)
+    assert stamped.shifted(dx=1.0).header == stamped.header
+    assert stamped.rotated(yaw=1.0).header == stamped.header

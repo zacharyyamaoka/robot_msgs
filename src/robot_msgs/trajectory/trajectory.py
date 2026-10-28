@@ -315,7 +315,8 @@ class Trajectory(Msg):
         upper = int(np.searchsorted(self.t, end, side="right"))
         return self[lower:upper]
 
-    def shifted(self: TrajectoryT, seconds: float) -> TrajectoryT:
+    def time_shifted(self: TrajectoryT, seconds: float) -> TrajectoryT:
+        """Every sample `seconds` later (earlier if negative)."""
         return self.replace(t=self.t + seconds)
 
     def rebased(self: TrajectoryT) -> TrajectoryT:
@@ -323,7 +324,7 @@ class Trajectory(Msg):
         if len(self) == 0:
             return self
         offset = float(self.t[0])
-        return self.replace(t=self.t - offset, header=self.header.shifted(offset))
+        return self.replace(t=self.t - offset, header=self.header.time_shifted(offset))
 
     def with_channel(self: TrajectoryT, name: str, values: Any) -> TrajectoryT:
         return self.replace(channels={**self.channels, name: values})

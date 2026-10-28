@@ -153,7 +153,7 @@ def test_generated_point_type_and_per_field_interpolation():
 
 
 def test_window_shift_and_rebase():
-    traj = series().shifted(2.0)
+    traj = series().time_shifted(2.0)
     assert traj.start_time == 2.0
     window = traj.window(2.2, 2.8)
     assert window.t.tolist() == [2.25, 2.5, 2.75]

@@ -98,6 +98,24 @@ class Transform(Msg):
             self.rotation.slerp(other.rotation, alpha),
         )
 
+    def shifted(self, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0, *, local: bool = False) -> Transform:
+        """Moved by ``(dx, dy, dz)`` along the parent frame's axes, or along its own with
+        ``local=True`` — e.g. back a grasp off along the tool: ``grasp.shifted(dz=-0.1, local=True)``.
+        """
+        offset = np.array([dx, dy, dz], dtype=np.float64)
+        if local:
+            offset = rot.quat_rotate(self.rotation._unit_array(), offset)
+        return Transform(Vector3.from_array(self.translation.as_array() + offset), self.rotation)
+
+    def rotated(
+        self, roll: float = 0.0, pitch: float = 0.0, yaw: float = 0.0, *, local: bool = False
+    ) -> Transform:
+        """Turned in place (the origin stays put) by ROS RPY about the parent frame's axes, or
+        about its own with ``local=True``."""
+        turn = Quaternion.from_euler(roll, pitch, yaw)
+        rotation = self.rotation.multiply(turn) if local else turn.multiply(self.rotation)
+        return Transform(self.translation, rotation)
+
     def as_pose(self) -> Pose:
         # WHY local import: pose.py imports Transform at module level (Pose delegates its maths).
         from robot_msgs.geometry.pose import Pose

@@ -49,5 +49,5 @@ class Header(Msg):
     def from_sec_nanosec(cls, sec: int, nanosec: int, frame_id: str = "") -> Header:
         return cls.from_ns(sec * 1_000_000_000 + nanosec, frame_id)
 
-    def shifted(self, seconds: float) -> Header:
+    def time_shifted(self, seconds: float) -> Header:
         return self.replace(stamp=self.stamp + seconds)
