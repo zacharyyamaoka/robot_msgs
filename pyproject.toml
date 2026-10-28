@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "robot-msgs"
+version = "0.1.0"
+description = "Standard robot message types as frozen Python dataclasses, with the helper functions ROS messages never had."
+readme = "README.md"
+requires-python = ">=3.11"
+# WHY numpy and nothing else: every message stores its numbers in the most compact form
+# (contiguous, read-only arrays) so batch views are free. Everything heavier is an extra.
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+viz = ["matplotlib>=3.8"]
+ros = ["rosbags>=0.10"]
+test = ["pytest>=8", "scipy>=1.11", "matplotlib>=3.8", "rosbags>=0.10"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/robot_msgs"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
