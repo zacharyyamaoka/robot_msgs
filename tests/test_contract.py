@@ -17,7 +17,8 @@ import robot_msgs
 from robot_msgs._core import load_npz, save_npz
 
 LIBRARY_TYPES = {
-    name: cls for name, cls in robot_msgs.message_types().items()
+    name: cls
+    for name, cls in robot_msgs.message_types().items()
     if cls.__module__.startswith("robot_msgs.")
 }
 IDS = [type(example).__name__ for example in EXAMPLES]
@@ -65,7 +66,11 @@ def test_runtime_dependencies_are_numpy_only():
         "print(sorted({m.split('.')[0] for m in sys.modules} & "
         "{'scipy', 'matplotlib', 'rosbags', 'pandas', 'torch', 'transforms3d'}))"
     )
-    result = subprocess.run([sys.executable, "-I", "-c", probe], capture_output=True, text=True,
-                            env={"PYTHONPATH": str(Path(robot_msgs.__file__).parents[1])})
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", probe],
+        capture_output=True,
+        text=True,
+        env={"PYTHONPATH": str(Path(robot_msgs.__file__).parents[1])},
+    )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "[]"

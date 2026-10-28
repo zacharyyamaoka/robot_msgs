@@ -139,16 +139,17 @@ time axis and the machinery; subclasses only declare their per-sample fields.
 ```python
 traj = JointTrajectory(t=t, joint_names=names, positions=q, velocities=qd)
 
-traj.positions          # (N, J) read-only array — the batch view, no copy
-traj["positions"]       # same, by name (also works for channels)
-traj[10]                # JointTrajectoryPoint at sample 10 (row views, no copy)
-for point in traj: ...  # per-step view
-traj[100:200]           # JointTrajectory, sliced as views — O(1)
-traj.at(1.25)           # interpolated point (linear; slerp for orientations)
-traj.resample(dt=0.004) # on a fixed controller grid
-traj.window(1.0, 2.0)   # the part between two times
-traj.joint("elbow")     # one joint, still a JointTrajectory
-traj.channels["kp"]     # any extra per-sample data you layer on top
+traj.positions  # (N, J) read-only array — the batch view, no copy
+traj["positions"]  # same, by name (also works for channels)
+traj[10]  # JointTrajectoryPoint at sample 10 (row views, no copy)
+for point in traj:
+    ...  # per-step view
+traj[100:200]  # JointTrajectory, sliced as views — O(1)
+traj.at(1.25)  # interpolated point (linear; slerp for orientations)
+traj.resample(dt=0.004)  # on a fixed controller grid
+traj.window(1.0, 2.0)  # the part between two times
+traj.joint("elbow")  # one joint, still a JointTrajectory
+traj.channels["kp"]  # any extra per-sample data you layer on top
 ```
 
 - **Per-sample fields** are declared with `sample()`; their first axis is time and they are
@@ -174,7 +175,7 @@ traj.channels["kp"]     # any extra per-sample data you layer on top
    ```python
    @dataclass(frozen=True, eq=False, repr=False, kw_only=True)
    class GripperTrajectory(Trajectory):
-       width: Array = sample()                                    # metres
+       width: Array = sample()  # metres
        grasping: Array | None = sample(default=None, interp="hold", dtype=bool)
    ```
 3. **Business types → your own dataclasses that hold robot_msgs values** (composition). A

@@ -4,18 +4,37 @@ so adding a type without adding it here fails the suite."""
 import numpy as np
 
 from robot_msgs.geometry import (
-    Accel, Point, Pose, Pose2D, PoseStamped, Quaternion, Transform, TransformStamped, Twist,
-    Vector3, Wrench,
+    Accel,
+    Point,
+    Pose,
+    Pose2D,
+    PoseStamped,
+    Quaternion,
+    TransformStamped,
+    Twist,
+    Vector3,
+    Wrench,
 )
 from robot_msgs.sensor import CameraInfo, Image, Imu, JointState, PointCloud
 from robot_msgs.std import Header
 from robot_msgs.trajectory import (
-    JointLimits, JointTrajectory, JointTrajectoryPoint, PoseTrajectory, PoseTrajectoryPoint,
-    Trajectory, TrajectoryPoint,
+    JointLimits,
+    JointTrajectory,
+    JointTrajectoryPoint,
+    PoseTrajectory,
+    PoseTrajectoryPoint,
+    Trajectory,
+    TrajectoryPoint,
 )
 from robot_msgs.vision import (
-    BoundingBox2D, BoundingBox3D, Detection2D, Detection2DArray, Detection3D, Detection3DArray,
-    ObjectHypothesis, ObjectHypothesisWithPose,
+    BoundingBox2D,
+    BoundingBox3D,
+    Detection2D,
+    Detection2DArray,
+    Detection3D,
+    Detection3DArray,
+    ObjectHypothesis,
+    ObjectHypothesisWithPose,
 )
 
 RNG = np.random.default_rng(3)
@@ -32,8 +51,10 @@ JOINT_TRAJ = JointTrajectory(
     header=Header(stamp=12.0, frame_id="base_link"),
 )
 POSE_TRAJ = PoseTrajectory.from_poses(
-    [0.0, 0.5, 1.0], [POSE, POSE @ Pose.from_xyz_rpy(0.1, 0, 0, 0, 0, 0.2), POSE],
-    child_frame_id="tool0", header=Header(frame_id="base_link"),
+    [0.0, 0.5, 1.0],
+    [POSE, POSE @ Pose.from_xyz_rpy(0.1, 0, 0, 0, 0, 0.2), POSE],
+    child_frame_id="tool0",
+    header=Header(frame_id="base_link"),
 ).with_derivatives()
 HYPOTHESIS = ObjectHypothesisWithPose(hypothesis=ObjectHypothesis("bottle", 0.91), pose=POSE)
 BOX2D = BoundingBox2D.from_xyxy(10, 20, 110, 220)
@@ -88,4 +109,6 @@ EXAMPLES = [
 ]
 
 assert isinstance(EXAMPLES[-1], TrajectoryPoint)
-assert isinstance(JOINT_TRAJ[4], JointTrajectoryPoint) and isinstance(POSE_TRAJ[1], PoseTrajectoryPoint)
+assert isinstance(JOINT_TRAJ[4], JointTrajectoryPoint) and isinstance(
+    POSE_TRAJ[1], PoseTrajectoryPoint
+)

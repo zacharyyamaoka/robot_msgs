@@ -12,15 +12,15 @@ traj = JointTrajectory(
     positions=np.stack([np.sin(t), np.cos(t)], axis=1),
 ).with_derivatives()
 
-print(traj)                                 # a summary, never 400 numbers
-print(traj.positions.shape)                 # batch view, no copy
-print(traj[100])                            # one point
-print(traj.at(0.123).positions)             # interpolated at any time
-for point in traj[:2]:                      # slices are views too
+print(traj)  # a summary, never 400 numbers
+print(traj.positions.shape)  # batch view, no copy
+print(traj[100])  # one point
+print(traj.at(0.123).positions)  # interpolated at any time
+for point in traj[:2]:  # slices are views too
     print(point.t, point.positions)
-print(traj.joint("elbow").joint_names)      # one joint, still a JointTrajectory
-print(traj.resample(dt=0.5).t)              # onto a fixed grid
+print(traj.joint("elbow").joint_names)  # one joint, still a JointTrajectory
+print(traj.resample(dt=0.5).t)  # onto a fixed grid
 
 grasp = Pose.from_xyz_rpy(0.5, 0.0, 0.2, np.pi, 0.0, 0.0)  # tool pointing down
-pregrasp = grasp.shifted(dz=-0.10, local=True)              # back off along the tool
+pregrasp = grasp.shifted(dz=-0.10, local=True)  # back off along the tool
 print(pregrasp.position)

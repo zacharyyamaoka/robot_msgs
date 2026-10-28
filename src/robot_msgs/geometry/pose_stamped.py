@@ -33,7 +33,9 @@ class PoseStamped(Msg):
     ) -> PoseStamped:
         return cls(Header(stamp, frame_id), Pose.from_xyz_rpy(x, y, z, roll, pitch, yaw))
 
-    def shifted(self, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0, *, local: bool = False) -> PoseStamped:
+    def shifted(
+        self, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0, *, local: bool = False
+    ) -> PoseStamped:
         """`Pose.shifted`, keeping the header."""
         return self.replace(pose=self.pose.shifted(dx, dy, dz, local=local))
 

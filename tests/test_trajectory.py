@@ -29,7 +29,9 @@ class GripperTrajectory(Trajectory):
 
 
 def gripper():
-    return GripperTrajectory(t=[0.0, 1.0, 2.0], width=[0.08, 0.04, 0.0], grasping=[False, False, True])
+    return GripperTrajectory(
+        t=[0.0, 1.0, 2.0], width=[0.08, 0.04, 0.0], grasping=[False, False, True]
+    )
 
 
 # ── construction ────────────────────────────────────────────────────────────
@@ -135,7 +137,7 @@ def test_resample_on_a_fixed_grid():
 
 def test_dt_refuses_to_guess_on_a_non_uniform_grid():
     with pytest.raises(ValueError, match="not uniformly spaced"):
-        Trajectory(t=[0.0, 0.1, 0.3]).dt
+        _ = Trajectory(t=[0.0, 0.1, 0.3]).dt
 
 
 def test_generated_point_type_and_per_field_interpolation():

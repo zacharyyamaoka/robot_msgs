@@ -188,7 +188,7 @@ class Trajectory(Msg):
             yield self._point(index)
 
     def __getitem__(self, key: Any) -> Any:
-        """``str`` → that field's array · ``int`` → a point · slice, mask or indices → a trajectory."""
+        """``str`` → a field's array · ``int`` → a point · slice, mask, indices → a trajectory."""
         if isinstance(key, str):
             return self._array(key)
         if isinstance(key, (int, np.integer)):
@@ -201,7 +201,9 @@ class Trajectory(Msg):
     @property
     def sample_names(self) -> tuple[str, ...]:
         """Names of every per-sample array that is set: typed fields, then channels."""
-        typed = tuple(f.name for f in sample_fields(type(self)) if getattr(self, f.name) is not None)
+        typed = tuple(
+            f.name for f in sample_fields(type(self)) if getattr(self, f.name) is not None
+        )
         return typed + tuple(self.channels)
 
     def _array(self, name: str) -> np.ndarray:
@@ -253,7 +255,9 @@ class Trajectory(Msg):
         return tuple(self)
 
     @classmethod
-    def from_points(cls: type[TrajectoryT], points: Sequence[TrajectoryPoint], **static: Any) -> TrajectoryT:
+    def from_points(
+        cls: type[TrajectoryT], points: Sequence[TrajectoryPoint], **static: Any
+    ) -> TrajectoryT:
         """Stack points back into one trajectory; `static` sets the per-trajectory fields."""
         if not points:
             raise ValueError("from_points needs at least one point")
@@ -366,8 +370,9 @@ class Trajectory(Msg):
             if getattr(self, f.name) is not None
         }
         channels = {
-            name: _interpolate(array, "linear" if array.dtype.kind in "fc" else "hold",
-                               lower, upper, alpha)
+            name: _interpolate(
+                array, "linear" if array.dtype.kind in "fc" else "hold", lower, upper, alpha
+            )
             for name, array in self.channels.items()
         }
         return dataclasses.replace(self, t=times, channels=channels, **changes)
@@ -446,7 +451,8 @@ def concatenate(trajectories: Sequence[TrajectoryT]) -> TrajectoryT:
     first = trajectories[0]
     kind = type(first)
     static = [
-        f.name for f in dataclasses.fields(first)
+        f.name
+        for f in dataclasses.fields(first)
         if f.name not in ("t", "channels", "header") and "sample" not in f.metadata
     ]
     for other in trajectories[1:]:

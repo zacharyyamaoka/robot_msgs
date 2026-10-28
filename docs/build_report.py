@@ -37,7 +37,11 @@ def run(*args: str) -> str:
 def test_counts() -> tuple[Counter, int, int, str]:
     with tempfile.TemporaryDirectory() as scratch:
         junit = Path(scratch) / "junit.xml"
-        tail = run(sys.executable, "-m", "pytest", "-q", f"--junitxml={junit}").strip().splitlines()[-1]
+        tail = (
+            run(sys.executable, "-m", "pytest", "-q", f"--junitxml={junit}")
+            .strip()
+            .splitlines()[-1]
+        )
         root = ET.parse(junit).getroot()
     per_file: Counter = Counter()
     failures = skipped = 0
@@ -65,7 +69,9 @@ def import_probe() -> str:
         "- set(sys.stdlib_module_names)))"
     )
     env = {"PYTHONPATH": str(REPO / "src")}
-    result = subprocess.run([sys.executable, "-I", "-c", probe], env=env, capture_output=True, text=True)
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", probe], env=env, capture_output=True, text=True
+    )
     return result.stdout.strip()
 
 
@@ -93,7 +99,11 @@ def ros_output() -> str:
     bag = Path(tempfile.mkdtemp()) / "pick_bag"
     source = (REPO / "examples" / "ros_export.py").read_text()
     body = source.split('"""', 2)[2].strip()
-    return code(body) + "<p class='label'>Real output</p>" + code(run(sys.executable, "examples/ros_export.py", str(bag)))
+    return (
+        code(body)
+        + "<p class='label'>Real output</p>"
+        + code(run(sys.executable, "examples/ros_export.py", str(bag)))
+    )
 
 
 def gallery() -> tuple[str, str]:

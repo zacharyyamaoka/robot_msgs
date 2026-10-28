@@ -73,7 +73,9 @@ class Pose(Msg):
         expect_type("Pose.interpolate(other)", other, Pose)
         return self.as_transform().interpolate(other.as_transform(), alpha).as_pose()
 
-    def shifted(self, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0, *, local: bool = False) -> Pose:
+    def shifted(
+        self, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0, *, local: bool = False
+    ) -> Pose:
         """Moved by ``(dx, dy, dz)`` along the parent axes, or the pose's own with ``local=True``:
         ``pregrasp = grasp.shifted(dz=-0.10, local=True)``."""
         return self.as_transform().shifted(dx, dy, dz, local=local).as_pose()

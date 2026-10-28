@@ -123,8 +123,8 @@ def main() -> None:
     print("one joint    joints.joint('elbow_joint') =", joints.joint("elbow_joint"))
     print("by label     waypoints.at(2.0)['name'] =", waypoints.at(2.0)["name"])
     print("gripper      closed from t =", joints.t[np.argmax(joints.channels["gripper"] > 0)], "s")
-    print("tool path    %.3f m, peak speed %.3f m/s" % (
-        tool.path_length(), np.linalg.norm(tool.linear_velocities, axis=1).max()))
+    peak_speed = np.linalg.norm(tool.linear_velocities, axis=1).max()
+    print(f"tool path    {tool.path_length():.3f} m, peak speed {peak_speed:.3f} m/s")
     print("limits       as planned:", joints.limit_violations() or "within limits")
     print("limits       2x faster: ")
     for problem in joints.time_scaled(0.5).limit_violations():

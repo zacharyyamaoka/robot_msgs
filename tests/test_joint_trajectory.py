@@ -134,5 +134,9 @@ def test_waypoints_are_just_a_sparse_trajectory_with_names():
 def test_round_trips_with_limits():
     traj = sine().replace(limits=JointLimits(joint_names=NAMES, max_jerk=[100.0] * 3))
     assert JointTrajectory.from_dict(traj.to_dict()) == traj
-    assert JointTrajectory.from_points(traj.to_points(), joint_names=NAMES,
-                                       header=traj.header, limits=traj.limits) == traj
+    assert (
+        JointTrajectory.from_points(
+            traj.to_points(), joint_names=NAMES, header=traj.header, limits=traj.limits
+        )
+        == traj
+    )

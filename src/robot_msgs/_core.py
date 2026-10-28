@@ -192,8 +192,7 @@ def _is_unset(value: Any, f: dataclasses.Field) -> bool:
     if isinstance(value, Msg) and f.default is not dataclasses.MISSING:
         return value == f.default
     if (
-        isinstance(value, Msg)
-        and f.default_factory is not dataclasses.MISSING  # type: ignore[misc]
+        isinstance(value, Msg) and f.default_factory is not dataclasses.MISSING  # type: ignore[misc]
     ):
         return value == f.default_factory()  # type: ignore[misc]
     return False
@@ -266,7 +265,11 @@ def _encode(value: Any, arrays: dict[str, np.ndarray] | None) -> Any:
             key = f"a{len(arrays)}"
             arrays[key] = value
             return {"npz": key}
-        return {"dtype": value.dtype.str, "shape": list(value.shape), "data": value.ravel().tolist()}
+        return {
+            "dtype": value.dtype.str,
+            "shape": list(value.shape),
+            "data": value.ravel().tolist(),
+        }
     if isinstance(value, Mapping):
         return {str(k): _encode(v, arrays) for k, v in value.items()}
     if isinstance(value, (tuple, list)):

@@ -1,6 +1,6 @@
 """The UR5e pick as a ROS 2 bag: robot_msgs values in, standard ROS 2 Jazzy messages out.
 
-    uv run --directory /home/bam/robot_msgs --extra ros python examples/ros_export.py OUT_BAG_DIR
+uv run --directory /home/bam/robot_msgs --extra ros python examples/ros_export.py OUT_BAG_DIR
 """
 
 from __future__ import annotations
@@ -20,8 +20,14 @@ def main(bag: Path) -> None:
     tool = tool_trajectory(joints)
 
     ros_traj = to_ros(joints, drop_extras=True)  # ROS has no slot for the gripper channel or limits
-    print(ros_type(joints), "with", len(ros_traj.points), "points;",
-          "point[250].time_from_start =", ros_traj.points[250].time_from_start)
+    print(
+        ros_type(joints),
+        "with",
+        len(ros_traj.points),
+        "points;",
+        "point[250].time_from_start =",
+        ros_traj.points[250].time_from_start,
+    )
     try:
         to_ros(joints)
     except ValueError as refusal:

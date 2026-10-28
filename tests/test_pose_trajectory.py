@@ -14,7 +14,9 @@ def spin(n=101, rate=0.5, radius=0.2):
     angle = rate * t
     positions = np.stack([radius * np.cos(angle), radius * np.sin(angle), np.full(n, 0.3)], 1)
     orientations = Rotation.from_euler("z", angle[:, None]).as_quat()
-    return PoseTrajectory(t=t, positions=positions, orientations=orientations, child_frame_id="tool0")
+    return PoseTrajectory(
+        t=t, positions=positions, orientations=orientations, child_frame_id="tool0"
+    )
 
 
 def test_shapes_and_normalisation():

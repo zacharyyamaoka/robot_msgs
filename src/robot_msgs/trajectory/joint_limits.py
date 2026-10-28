@@ -9,7 +9,14 @@ import numpy as np
 
 from robot_msgs._core import Array, Msg, optional_array, set_field
 
-BOUNDS = ("min_position", "max_position", "max_velocity", "max_acceleration", "max_jerk", "max_effort")
+BOUNDS = (
+    "min_position",
+    "max_position",
+    "max_velocity",
+    "max_acceleration",
+    "max_jerk",
+    "max_effort",
+)
 
 
 @dataclass(frozen=True, eq=False, repr=False, kw_only=True)

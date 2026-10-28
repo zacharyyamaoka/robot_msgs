@@ -98,9 +98,11 @@ class Transform(Msg):
             self.rotation.slerp(other.rotation, alpha),
         )
 
-    def shifted(self, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0, *, local: bool = False) -> Transform:
+    def shifted(
+        self, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0, *, local: bool = False
+    ) -> Transform:
         """Moved by ``(dx, dy, dz)`` along the parent frame's axes, or along its own with
-        ``local=True`` — e.g. back a grasp off along the tool: ``grasp.shifted(dz=-0.1, local=True)``.
+        ``local=True``. Back a grasp off along the tool: ``grasp.shifted(dz=-0.1, local=True)``.
         """
         offset = np.array([dx, dy, dz], dtype=np.float64)
         if local:

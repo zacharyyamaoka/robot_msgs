@@ -73,7 +73,8 @@ class PoseTrajectory(Trajectory):
             values = getattr(self, name)
             if values is not None and (values.ndim != 2 or values.shape[1] != width):
                 raise ValueError(
-                    f"PoseTrajectory.{name} has shape {values.shape}, expected ({len(self)}, {width})"
+                    f"PoseTrajectory.{name} has shape {values.shape}, "
+                    f"expected ({len(self)}, {width})"
                 )
         if len(self):
             norms = np.linalg.norm(self.orientations, axis=1)
@@ -83,12 +84,16 @@ class PoseTrajectory(Trajectory):
                 set_field(self, "orientations", adopt(quat_normalize(self.orientations)))
 
     @classmethod
-    def from_poses(cls, t: Sequence[float], poses: Sequence[Pose], **static: object) -> PoseTrajectory:
+    def from_poses(
+        cls, t: Sequence[float], poses: Sequence[Pose], **static: object
+    ) -> PoseTrajectory:
         arrays = np.array([pose.as_array() for pose in poses]).reshape(-1, 7)
         return cls(t=t, positions=arrays[:, :3], orientations=arrays[:, 3:], **static)  # type: ignore[arg-type]
 
     @classmethod
-    def from_matrices(cls, t: Sequence[float], matrices: np.ndarray, **static: object) -> PoseTrajectory:
+    def from_matrices(
+        cls, t: Sequence[float], matrices: np.ndarray, **static: object
+    ) -> PoseTrajectory:
         """From ``(N, 4, 4)`` homogeneous transforms (what FK usually returns)."""
         positions, orientations = matrix_to_pose(matrices)
         return cls(t=t, positions=positions, orientations=orientations, **static)  # type: ignore[arg-type]
@@ -103,13 +108,17 @@ class PoseTrajectory(Trajectory):
         """``(N, 4, 4)`` homogeneous transforms, reference ← child."""
         return pose_to_matrix(self.positions, self.orientations)
 
-    def transformed(self, transform: Transform | Pose, *, frame_id: str | None = None) -> PoseTrajectory:
+    def transformed(
+        self, transform: Transform | Pose, *, frame_id: str | None = None
+    ) -> PoseTrajectory:
         """Re-express in another frame: ``T_new_child = transform @ T_old_child``."""
         offset = transform.as_array()
         translation, rotation = offset[:3], offset[3:]
         header = self.header if frame_id is None else self.header.replace(frame_id=frame_id)
         rotated = {
-            name: None if getattr(self, name) is None else quat_rotate(rotation, getattr(self, name))
+            name: None
+            if getattr(self, name) is None
+            else quat_rotate(rotation, getattr(self, name))
             for name in ("linear_velocities", "angular_velocities")
         }
         return self.replace(
