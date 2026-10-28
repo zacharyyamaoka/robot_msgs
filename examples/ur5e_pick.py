@@ -31,8 +31,8 @@ UR5E_LIMITS = JointLimits(
     min_position=[-2 * np.pi] * 6,
     max_position=[2 * np.pi] * 6,
     max_velocity=[np.pi] * 6,
-    max_acceleration=[4.0] * 6,
-    max_jerk=[40.0] * 6,
+    max_acceleration=[8.0] * 6,
+    max_jerk=[120.0] * 6,
     max_effort=[150.0, 150.0, 150.0, 28.0, 28.0, 28.0],
 )
 
