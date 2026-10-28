@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>robot_msgs v1</title>
+<style>
+:root {
+  --bg: #fbfbfa; --panel: #ffffff; --ink: #1f2328; --muted: #646a73; --line: #e6e6e3;
+  --accent: #2f6f4f; --accent-soft: #e8f2ec; --warn: #9a5b00; --warn-soft: #fff4e0;
+  --code-bg: #f4f4f2; --view: #2f6f4f; --compute: #5a55a8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17181a; --panel: #1e2023; --ink: #e8e8e6; --muted: #a0a4ab; --line: #2e3136;
+    --accent: #7cc59b; --accent-soft: #1f2e25; --warn: #f0b35a; --warn-soft: #33281a;
+    --code-bg: #24272b; --view: #7cc59b; --compute: #a8a3f0;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17181a; --panel: #1e2023; --ink: #e8e8e6; --muted: #a0a4ab; --line: #2e3136;
+  --accent: #7cc59b; --accent-soft: #1f2e25; --warn: #f0b35a; --warn-soft: #33281a;
+  --code-bg: #24272b; --view: #7cc59b; --compute: #a8a3f0;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 44px 0 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+h3 { font-size: 16px; margin: 22px 0 6px; }
+p, li { max-width: 74ch; }
+.sub { color: var(--muted); margin: 0 0 18px; }
+.verdict { background: var(--accent-soft); border-left: 3px solid var(--accent); padding: 12px 16px;
+  border-radius: 6px; margin: 18px 0; }
+.verdict b { display: block; font-size: 16px; }
+.note { background: var(--warn-soft); border-left: 3px solid var(--warn); padding: 10px 14px; border-radius: 6px; }
+code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg);
+  padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--code-bg); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+pre code { background: none; padding: 0; white-space: pre; }
+.label { color: var(--muted); font-size: 13px; margin: 8px 0 -6px; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 14px; display: block; overflow-x: auto; }
+th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; font-size: 13px; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.hero video, .hero img { width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; }
+@media (max-width: 520px) { .gallery { grid-template-columns: 1fr; } }
+figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+figure img { width: 100%; border-radius: 6px; background: #fff; }
+figcaption { color: var(--muted); font-size: 13px; padding: 4px 4px 0; }
+.diagram { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+.diagram svg { width: 100%; height: auto; }
+.diagram text { fill: var(--ink); font: 13px ui-monospace, Menlo, monospace; }
+.diagram .muted { fill: var(--muted); font: 12px -apple-system, Inter, sans-serif; }
+.diagram .store { fill: var(--code-bg); stroke: var(--line); }
+.diagram .bar { fill: var(--accent-soft); stroke: var(--accent); }
+.diagram .view { fill: var(--panel); stroke: var(--view); stroke-width: 1.5; }
+.diagram .compute { fill: var(--panel); stroke: var(--compute); stroke-width: 1.5; stroke-dasharray: 5 3; }
+.diagram .arrow-view { stroke: var(--view); stroke-width: 1.5; fill: none; marker-end: url(#tip-view); }
+.diagram .arrow-compute { stroke: var(--compute); stroke-width: 1.5; fill: none; stroke-dasharray: 5 3; marker-end: url(#tip-compute); }
+.pill { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+details { border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; background: var(--panel); margin: 8px 0; }
+summary { cursor: pointer; font-weight: 600; }
+ol.ask li { margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<main>
+<h1>robot_msgs v1 — one domain model for robot data</h1>
+<p class="sub">2026-10-28 · <code>/home/bam/robot_msgs</code> · commit <code>{{COMMIT}}</code> · built from real runs by <code>docs/build_report.py</code></p>
+
+<div class="verdict">
+<b>robot_msgs exists and works: 30+ standard types, a unified Trajectory, plots, and real ROS 2 messages, all tested.</b>
+It's a new local repo (<code>main</code>, no remote, not pushed). Nothing in bam_ws, traj_compare or like_keras uses it yet; migrating them is your call (below).
+</div>
+
+<section class="hero">
+{{HERO}}
+<p class="label">Recorded from <code>robot_msgs.viz.animate(joints, tool)</code> on the UR5e pick example: one <code>JointTrajectory</code> (626 samples, 8 ms grid) and the <code>PoseTrajectory</code> of tool0 from FK over its batch view. The cursor is <code>traj.at(t)</code>.</p>
+</section>
+
+<h2>What it is</h2>
+<ul>
+<li><b>The vocabulary plus the functions between its parts.</b> A pose is a point and an orientation in a frame. A trajectory is poses (or joint angles) over time. A point cloud comes from a depth image plus camera info. The relationships ship with the types: <code>pose.shifted(dz=-0.1, local=True)</code>, <code>traj.joint_state_at(t)</code>, <code>PointCloud.from_depth(depth, info)</code>.</li>
+<li><b>ROS's domain model without ROS.</b> Same packages and field names, so the ROS docs are our docs. The values are frozen, numpy-backed and full of helpers. ROS 2 wire format is an export, not the programming model.</li>
+<li><b>The bottom of the stack.</b> Runtime dependency: numpy only, proven below. like_keras/Clank, bam_traj_gen, traj_compare and the sim can all sit on it.</li>
+</ul>
+
+<table>
+<tr><th>Kept from ROS</th><th>Dropped</th></tr>
+<tr><td>The domain model: geometry / sensor / trajectory / vision msgs</td><td>Behaviourless structs. Offsetting, interpolation and projection were separate libraries; here they are methods.</td></tr>
+<tr><td>Field names verbatim (<code>JointState.name/position</code>, <code>CameraInfo.k</code>)</td><td>Array-of-structs as the only storage: a JointTrajectory is not 626 point messages</td></tr>
+<tr><td>Every stamped message carries time + frame (<code>Header</code>)</td><td>Codegen, colcon and a ROS install just to have a <code>Pose</code></td></tr>
+<tr><td>Explicit <code>frame_id</code> / <code>child_frame_id</code></td><td>Mutable messages and <code>msg.pose.pose.position.x = …</code></td></tr>
+</table>
+
+<h2>The Trajectory: one entity, many views</h2>
+<p>Storage is struct-of-arrays: one read-only array per field, with time on axis 0. Every other shape is a <span style="color:var(--view)">view</span> (free, same memory) or a <span style="color:var(--compute)">computed</span> new value. Your instinct was right, and the July tuple-backed version couldn't deliver it: its <code>to_numpy()</code> view was a copy.</p>
+<div class="diagram">
+<svg viewBox="0 0 900 360" role="img" aria-label="Trajectory storage and its views">
+<defs>
+<marker id="tip-view" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--view)"/></marker>
+<marker id="tip-compute" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--compute)"/></marker>
+</defs>
+<rect class="store" x="20" y="30" width="330" height="300" rx="10"/>
+<text x="36" y="56">JointTrajectory</text>
+<text class="muted" x="36" y="76">frozen · numpy, read-only · time on axis 0</text>
+<rect class="bar" x="36" y="96" width="60" height="26" rx="4"/><text x="104" y="114">t            (N,)</text>
+<rect class="bar" x="36" y="134" width="290" height="26" rx="4"/><text x="46" y="152">positions        (N, J)</text>
+<rect class="bar" x="36" y="172" width="290" height="26" rx="4"/><text x="46" y="190">velocities       (N, J)</text>
+<rect class="bar" x="36" y="210" width="290" height="26" rx="4"/><text x="46" y="228">channels["kp"]   (N, J)</text>
+<text class="muted" x="36" y="268">per-trajectory: joint_names, limits,</text>
+<text class="muted" x="36" y="286">header (stamp, frame_id)</text>
+<rect class="view" x="470" y="24" width="410" height="40" rx="8"/><text x="484" y="49">traj.positions → (N, J) array</text>
+<rect class="view" x="470" y="74" width="410" height="40" rx="8"/><text x="484" y="99">traj[i] / for p in traj → point (row views)</text>
+<rect class="view" x="470" y="124" width="410" height="40" rx="8"/><text x="484" y="149">traj[a:b], window(t0, t1) → trajectory</text>
+<rect class="view" x="470" y="174" width="410" height="40" rx="8"/><text x="484" y="199">traj.joint("elbow") → JointTrajectory</text>
+<rect class="compute" x="470" y="234" width="410" height="40" rx="8"/><text x="484" y="259">traj.at(t), resample(dt=…) → new values</text>
+<rect class="compute" x="470" y="284" width="410" height="40" rx="8"/><text x="484" y="309">to_points(), to_ros() → ROS-style points</text>
+<path class="arrow-view" d="M350,147 C410,147 410,44 466,44"/>
+<path class="arrow-view" d="M350,152 C410,152 410,94 466,94"/>
+<path class="arrow-view" d="M350,157 C410,157 410,144 466,144"/>
+<path class="arrow-view" d="M350,162 C410,162 410,194 466,194"/>
+<path class="arrow-compute" d="M350,190 C410,190 410,254 466,254"/>
+<path class="arrow-compute" d="M350,195 C410,195 410,304 466,304"/>
+</svg>
+</div>
+<p class="label">Solid = view (no copy, measured with <code>np.shares_memory</code> in the tests) · dashed = computes a new value. <code>joint()</code> copies its columns (numpy fancy indexing); its row slices are views.</p>
+{{TOUR}}
+
+<h3>How general should a type be? The function decides</h3>
+<p>Your framing is now rule 8 in <code>docs/DESIGN.md</code>. A function that works on anything with samples over time takes a <code>Trajectory</code>: <code>resample</code>, <code>window</code>, <code>plot</code>, <code>concatenate</code>. One that needs joint angles takes a <code>JointTrajectory</code>: <code>joint()</code>, <code>limit_violations()</code>, <code>joint_state_at()</code>. One that needs poses takes a <code>PoseTrajectory</code>: <code>transformed()</code>, <code>shifted()</code>, <code>path_length()</code>. The type is the validation. A new domain subclasses <code>Trajectory</code> and declares its <code>sample()</code> fields in its own file. It gets indexing, iteration, interpolation, plotting and serialisation for free, plus a generated point type (tested with a <code>GripperTrajectory</code>).</p>
+
+<h3>The UR5e pick example, end to end</h3>
+<p><code>examples/ur5e_pick.py</code> turns named waypoints into a minimum-jerk <code>JointTrajectory</code> with UR5e limits and a <code>gripper</code> channel, then runs FK over the batch view into the tool's <code>PoseTrajectory</code>. Real output:</p>
+{{PICK_OUTPUT}}
+
+<h2>Six trajectory shapes in your repos → one</h2>
+<table>
+<tr><th>Today</th><th>Where</th><th>In robot_msgs</th><th>Behaviour that must survive</th></tr>
+<tr><td><code>NumpyTrajectory</code> (frozen, ndarray, t0 = 0)</td><td><code>mdp/env/sim/bam_arm/bam_arm/kinematics/contracts.py:181</code> + 2 byte-identical copies in like_keras</td><td><code>JointTrajectory</code>, <code>rebased()</code> for t0 = 0</td><td>joint_names; frame_id → <code>header.frame_id</code>; waypoint names/times → a sparse waypoint trajectory; <code>trajectory_id</code> digest is <b>not modelled yet</b></td></tr>
+<tr><td>"NpTrajectory" (mutable, all-optional, kp/kd/tau, ik_tip_path)</td><td>archived <code>bam/msgs</code>, <code>bam_traj_gen/docs/ref</code></td><td><code>JointTrajectory</code> + channels, <code>PoseTrajectory</code></td><td>tau → <code>effort</code>; kp/kd/max_tau → channels; ik_tip_path (N,4,4) → <code>PoseTrajectory.from_matrices</code>; path metrics → channels</td></tr>
+<tr><td><code>bam_traj_gen.JointTrajectory</code> (tuples, tau_ff, waypoints)</td><td><code>bam_traj_gen/src/bam_traj_gen/joint_trajectory.py:38</code></td><td><code>JointTrajectory</code></td><td>q/qd/qdd → positions/velocities/accelerations; tau_ff → effort; waypoints → <code>JointTrajectory</code> with a <code>name</code> channel (tested); the numpy view becomes free</td></tr>
+<tr><td>ROS-style <code>JointTrajectory(header, joint_names, points)</code></td><td><code>like_keras/lk/msgs/archive/ros_msgs</code></td><td><code>to_points()</code> / <code>robot_msgs.ros.to_ros</code></td><td>array-of-structs on demand, never as storage</td></tr>
+<tr><td>sim2real measured-run <code>Trajectory</code></td><td><code>sim2real/diagnostics_ref/robotdx/diagnostics/data.py:23</code></td><td><code>JointTrajectory</code> + channels</td><td>q_target, i_q, temp_c, voltage interpolate linearly; mode/fault hold (ints never blend, tested)</td></tr>
+<tr><td><code>traj_compare.Situation</code></td><td><code>traj_compare/src/traj_compare/model.py:273</code></td><td><code>JointTrajectory</code> + <code>PoseTrajectory</code></td><td>poses (N,4,4) → <code>from_matrices</code>; missing qd/qdd → <code>with_derivatives()</code></td></tr>
+</table>
+
+<h2>The packages</h2>
+<table>
+<tr><th>Import</th><th>Types</th><th>Helpers that ROS left to other libraries</th></tr>
+<tr><td><code>robot_msgs.std</code></td><td>Header</td><td><code>now()</code>, <code>stamp_ns</code>, sec/nanosec split, <code>time_shifted()</code></td></tr>
+<tr><td><code>robot_msgs.geometry</code></td><td>Vector3, Point, Quaternion, Pose, Pose2D, Transform, Twist, Wrench, Accel, PoseStamped, TransformStamped</td><td><code>@</code> compose, <code>inverse()</code>, <code>shifted()/rotated()</code> (world or local), <code>from_xyz_rpy</code>, matrices, slerp, <code>interpolate</code>; batch kernel <code>geometry.rotations</code></td></tr>
+<tr><td><code>robot_msgs.sensor</code></td><td>JointState, Image, CameraInfo, PointCloud, Imu</td><td><code>project/unproject</code>, <code>PointCloud.from_depth</code>, <code>transformed</code>, <code>downsampled</code>, <code>Image.from_array/to_rgb/crop</code></td></tr>
+<tr><td><code>robot_msgs.vision</code></td><td>BoundingBox2D/3D, ObjectHypothesis(WithPose), Detection2D/3D(+Array)</td><td><code>iou</code>, <code>nms</code>, <code>filtered</code>, <code>as_arrays()</code> batch view, <code>corners/contains</code></td></tr>
+<tr><td><code>robot_msgs.trajectory</code></td><td>Trajectory, JointTrajectory, PoseTrajectory, their points, JointLimits</td><td>views, <code>at/resample/window</code>, <code>with_derivatives</code>, <code>time_scaled</code>, <code>limit_violations</code>, <code>concatenate</code>, <code>from_joint_states</code></td></tr>
+<tr><td><code>robot_msgs.viz</code> <span class="pill">[viz]</span></td><td>—</td><td><code>plot(msg)</code> for every type, <code>animate(...)</code></td></tr>
+<tr><td><code>robot_msgs.ros</code> <span class="pill">[ros]</span></td><td>—</td><td><code>to_ros/from_ros</code> (ROS 2 Jazzy via rosbags), <code>write_bag/read_bag</code> (mcap)</td></tr>
+</table>
+
+<h2>Visualisation: <code>plot(msg)</code> for every standard type</h2>
+<div class="gallery">
+{{GALLERY}}
+</div>
+
+<h2>ROS 2 is an export, and it is real</h2>
+<p><code>robot_msgs.ros</code> converts every type with a ROS counterpart to the actual ROS 2 <b>Jazzy</b> message classes (rosbags' typestore, no ROS install; vision_msgs 4.1.1 registered from upstream) and writes standard rosbag2 mcap bags that Foxglove opens. What ROS has no slot for is never dropped silently.</p>
+{{ROS_OUTPUT}}
+
+<h2>Proof</h2>
+<h3>Tests: {{TEST_TOTAL}} collected, {{TEST_FAILURES}} failing, {{TEST_SKIPPED}} skipped</h3>
+<p class="label">pytest summary line: <code>{{TEST_TAIL}}</code></p>
+<table>
+<tr><th>File</th><th class="num">Tests</th></tr>
+{{TEST_ROWS}}
+</table>
+<ul>
+<li><b>Independent oracles:</b> rotation, compose, euler, slerp and interpolation are checked against scipy, a test-only dependency. ROS conversions round-trip through rosbags' own CDR serializer. A bag is written and read back with rosbags' Reader.</li>
+<li><b>Contract tests over every type</b>, via a catalog of one example each. Each must be a frozen dataclass, and must pickle, deep-copy, JSON-round-trip and npz-round-trip losslessly. Adding a type without a catalog example fails the suite.</li>
+</ul>
+<h3>Dependency boundary</h3>
+<p>Built wheel <code>{{WHEEL}}</code>, metadata:</p>
+<pre><code>{{REQUIRES}}</code></pre>
+<p>Third-party modules loaded by <code>python -I -c "import robot_msgs"</code>: <code>{{PROBE}}</code></p>
+
+<h2>Decisions I made (each reversible)</h2>
+<table>
+<tr><th>Decision</th><th>Why</th><th>Alternative</th></tr>
+<tr><td>Name <code>robot_msgs</code>, not <code>lk_msgs</code></td><td>It sits <i>below</i> like_keras. Something that changes more slowly shouldn't carry the faster thing's prefix. The helpers don't need a framework name.</td><td><code>lk_msgs</code> (your 2026-07-21 idea), which inverts the dependency</td></tr>
+<tr><td><code>JointTrajectory</code>, not <code>NpTrajectory</code></td><td>It's ROS's name. Storage is an implementation detail and shouldn't be in the name.</td><td>—</td></tr>
+<tr><td>numpy storage (overrides the July tuple-backed FR)</td><td>"Most compact, efficient storage with views." Tuple storage makes every numpy view a copy, at 4× the memory.</td><td>Tuples plus an optional numpy view: stdlib-only, but views copy</td></tr>
+<tr><td><code>Header.stamp</code> is float seconds</td><td>What all your trajectory and controller code already uses. Resolves 0.24 µs at today's epoch; <code>stamp_ns</code> is there for bags.</td><td>int nanoseconds (lossless, clunkier)</td></tr>
+<tr><td>xyzw quaternions everywhere; <code>wxyz</code> only via explicit converters</td><td>Your vault's stance (ROS/Pinocchio). MuJoCo and viser get <code>xyzw_to_wxyz</code>.</td><td>—</td></tr>
+<tr><td>Own 200-line rotation kernel instead of bam_ws's tf_transformations fork</td><td>The fork pulls transforms3d <i>and pytest</i> at runtime and lives inside bam_ws. The kernel is scipy-oracle-tested.</td><td>Depend on the fork by path</td></tr>
+<tr><td><code>shifted()</code>, not <code>shift()</code></td><td>A frozen value returns a new value, so the name says so. Matches <code>normalized/rebased/time_scaled</code>.</td><td><code>shift()</code></td></tr>
+<tr><td>Floats print exactly in repr</td><td>The compact format printed stamp 1761600000.25 as <code>1.7616e+09</code>. Truthful rendering wins over pretty.</td><td>Rounded display</td></tr>
+<tr><td>ROS export refuses to drop <code>channels</code>/<code>limits</code> silently</td><td>ROS has no slot for them. <code>drop_extras=True</code> makes the loss explicit.</td><td>Drop them silently</td></tr>
+</table>
+
+<h2>What needs you</h2>
+<ol class="ask">
+<li><b>Domain:</b> robotmsgs.com is unregistered (registry RDAP; price and premium status unknown, since there's no Cloudflare registrar token). Buy it on Cloudflare yourself. <i>Default if silent:</i> nothing bought.</li>
+<li><b>Which consumer migrates first?</b> I recommend <code>traj_compare</code>, whose <code>Situation</code> is already JointTrajectory + PoseTrajectory in disguise, then bam_arm's <code>NumpyTrajectory</code>. <i>Default:</i> nothing migrates until you say.</li>
+<li><b>Publish?</b> A private GitHub repo, plus reserving <code>robot-msgs</code> on PyPI (free today). <i>Default:</i> local only.</li>
+<li><b>numpy over tuples</b> reverses the July FR-TRAJ-JOINT-TRAJECTORY-VIEWS acceptance ("tuple-backed"). <i>Default:</i> numpy, as built.</li>
+</ol>
+
+<h2>Left, and deliberately not done</h2>
+<ul>
+<li><b>Next, not blocked:</b> cubic/quintic interpolation like ros2_control's JTC (v1 is linear / slerp / hold); a frame-tree type (<code>TFMessage</code> + <code>lookup("base_link", "tool0")</code>); PoseArray, PoseWithCovariance, Odometry, LaserScan, CompressedImage, markers; distortion in <code>CameraInfo.project</code>; a Rerun / Clank-plugin view.</li>
+<li><b>Not done on purpose:</b> migrating bam_ws, traj_compare or like_keras (integration is your call); pushing or publishing; buying the domain; an audit (you didn't ask). The Trajectory core is the long-lived contract here, so it may be worth a <code>/llm-judge</code>.</li>
+</ul>
+</main>
+</body>
+</html>
