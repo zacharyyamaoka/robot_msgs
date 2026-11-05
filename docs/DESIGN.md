@@ -66,6 +66,7 @@ traj_compare, sim, drivers) can depend on it, and it depends on nothing but nump
 | Euler | ROS RPY: fixed axes X then Y then Z, `R = Rz(yaw)·Ry(pitch)·Rx(roll)` |
 | `a.compose(b)` / `a @ b` | apply `b` in `a`'s frame: `T_world_tool = T_world_base @ T_base_tool` |
 | Time | `Header.stamp`: float seconds. Trajectory `t`: float seconds relative to `header.stamp` |
+| Context beyond a frame | `Header.meta`, str → str (origin, units, provenance); dropped on ROS export |
 | Absent optional array | `None` (ROS uses an empty array; converters map between them) |
 | Matrices | `(3, 3)` rotation, `(4, 4)` homogeneous, row-major numpy |
 
@@ -163,6 +164,62 @@ traj.channels["kp"]  # any extra per-sample data you layer on top
   point type.
 - `t` is relative to `header.stamp`; `rebased()` moves `t[0]` to 0 and folds the offset into the
   stamp. Out-of-range interpolation raises unless `extrapolate="clamp"`.
+- Recordings whose stamps repeat or step back go through `from_samples(..., duplicate_times=...)`,
+  which says what it changed (below).
+
+## Header.meta — context ROS has no field for
+
+ROS's only per-message context is `std_msgs/Header`: a stamp and a `frame_id`. There is no free
+metadata, so a consumer that needs to say *what the numbers are relative to* beyond a frame name
+(the origin a joint angle is measured from, its units, which recorder wrote it, what a cleaner
+changed) ends up encoding it into `frame_id` (bam_rack_twin did, 2026-11-04).
+
+**Decision:** `Header.meta: Mapping[str, str]`, default empty, frozen (`FrozenDict`), copied at
+construction.
+
+- **WHY on the header, not on each message:** the header is already the slot that says what a
+  message is relative to; extending it gives every stamped message and every trajectory the same
+  place once, and everything that keeps the header keeps meta for free: slicing, masks,
+  `window`, `resample`, `rebased`, `joint()`, `with_*`, `to_dict` / JSON, `save_npz`, pickling.
+- **Points carry their trajectory's header** (`traj[i].header`, `traj.at(t).header`), so a point
+  taken out keeps its frame, origin and units. ROS's points have no header; ours are views, and
+  `t` is meaningless without the stamp it counts from. `from_points` takes the points' shared
+  header back (and refuses points whose headers differ, unless you pass `header=`).
+- **WHY strings only:** meta is read by people and by other tools. A float would be `str()`-ed
+  silently and its spelling chosen for you, so non-strings are refused and the caller writes
+  `repr(x)` (render stored values truthfully). Structured values go in as JSON strings.
+- **`concatenate` refuses pieces with different meta**, as it refuses different frames: two
+  trajectories measured from different origins are not one trajectory.
+- **Dropped on ROS export** (`to_ros`), always, without `drop_extras`: std_msgs/Header has nowhere
+  to put it and every stamped message exports through one header converter. `from_ros` gives an
+  empty meta. robot_msgs' own files are the lossless form.
+- **Not for per-sample data** (that is `channels`) or per-trajectory numbers a function computes
+  with (those are typed fields, like `limits`). Meta is description, never input.
+
+## Recorded stamps — `from_samples`
+
+`t` must strictly increase, and the constructor keeps raising otherwise: interpolation, `dt`,
+`window` and `searchsorted` all depend on it. Recordings break it (a loop logs one stamp twice, a
+clock steps back), so there is one explicit door:
+
+```python
+traj, repair = JointTrajectory.from_samples(
+    t=t, joint_names=names, positions=q, duplicate_times="drop_later"  # | "average" | "error"
+)
+repair.dropped  # (17, 230): indices into the samples as given; repair.dropped_t their stamps
+str(repair)  # "drop_later: dropped 2 of 1000 samples (repeated or backwards stamps) at ..."
+traj.header.meta["time_repair.dropped"]  # the same receipt, inside the trajectory
+```
+
+- `duplicate_times` has **no default**: the caller decides what a repeated stamp means.
+  `"drop_later"` keeps a sample only if its stamp is after every earlier kept one (first of a
+  repeat stays, backwards stamps go, values never altered). `"average"` merges samples at exactly
+  equal stamps (floats averaged, quaternions on the short arc, held/discrete values must agree or
+  it raises) and drops backwards stamps, which have no partner. `"error"` is the constructor.
+- **WHY a receipt in two places** (the returned `TimeRepair` and `header.meta["time_repair.*"]`):
+  silent repair is not allowed. A cleaned recording that does not say so is indistinguishable
+  from a clean one; the meta copy means the saved file says so too. Clean input changes nothing
+  and stamps nothing.
 
 ## Extending without forking
 

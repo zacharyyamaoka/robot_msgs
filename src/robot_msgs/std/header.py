@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
-from robot_msgs._core import Msg, set_field
+from robot_msgs._core import FrozenDict, Msg, set_field
 
 
 @dataclass(frozen=True, eq=False, repr=False)
@@ -16,10 +17,21 @@ class Header(Msg):
     WHY float seconds, not ROS's (sec, nanosec): it is what every trajectory and controller in
     this codebase already uses. float64 resolves 0.24 µs at today's epoch; `stamp_ns` and
     `from_ns` exist for the lossless edge (bags, MCAP).
+
+    `meta` is context ROS has no field for (an origin, units, where the numbers came from, what
+    a cleaner changed) as an immutable ``str -> str`` mapping.
+    WHY on the header, not a free-form field on each message: the header is already the one place
+    a message says what its numbers are relative to (`frame_id`); meta extends that slot, so every
+    stamped message and every trajectory gets it once, and everything that keeps the header
+    (slicing, `.at()`, `resample`, serialisation) keeps it too. WHY strings only: the values are
+    read by people and other tools; a number would be `str()`-ed silently, so it is refused and
+    the caller picks the spelling (``repr(origin)``). Dropped on ROS export: std_msgs/Header has
+    only stamp and frame_id (docs/DESIGN.md, "Header.meta").
     """
 
     stamp: float = 0.0
     frame_id: str = ""
+    meta: Mapping[str, str] = field(default_factory=FrozenDict)
 
     def __post_init__(self) -> None:
         stamp = float(self.stamp)
@@ -27,6 +39,13 @@ class Header(Msg):
             raise ValueError(f"Header.stamp must be finite, got {stamp}")
         set_field(self, "stamp", stamp)
         set_field(self, "frame_id", str(self.frame_id))
+        for key, value in self.meta.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                raise ValueError(
+                    f"Header.meta maps str to str; got {key!r}: {value!r} "
+                    "(spell numbers yourself, e.g. repr(x), so nothing is coerced silently)"
+                )
+        set_field(self, "meta", FrozenDict(self.meta))
 
     @classmethod
     def now(cls, frame_id: str = "") -> Header:

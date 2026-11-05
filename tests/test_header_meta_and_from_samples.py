@@ -1,11 +1,13 @@
-"""Two gaps found when bam_rack_twin adopted JointTrajectory (bam_ws b32c07a8), written before the code.
+"""Two gaps found when bam_rack_twin adopted JointTrajectory (bam_ws b32c07a8).
 
-1. `Header.meta`: an immutable str -> str mapping for context ROS has no field for (an origin, units,
-   provenance). It rides the header, so it survives slicing, `.at()`, `.resample()`, every serialisation,
-   and is dropped on ROS export, where std_msgs/Header has only stamp and frame_id.
-2. `Trajectory.from_samples(..., duplicate_times=...)`: the constructor keeps its strictly-increasing
-   invariant; recorded data with repeated or backwards stamps goes through an explicit cleaner that
-   says exactly what it changed, in its return value and in the header's meta. Never silent.
+Written before the code.
+
+1. `Header.meta`: an immutable str -> str mapping for context ROS has no field for (an origin,
+   units, provenance). It rides the header, so it survives slicing, `.at()`, `.resample()`, every
+   serialisation, and is dropped on ROS export, where std_msgs/Header has only stamp and frame_id.
+2. `Trajectory.from_samples(..., duplicate_times=...)`: the constructor keeps its strictly
+   increasing invariant; recorded data with repeated or backwards stamps goes through an explicit
+   cleaner that says exactly what it changed, in its return value and in the header's meta.
 """
 
 import json
@@ -174,7 +176,8 @@ def test_clean_samples_come_back_unchanged_under_every_policy():
 def test_drop_later_keeps_the_first_of_every_repeat_and_drops_backwards_stamps():
     message, repair = recorded("drop_later")
     assert message.t.tolist() == [0.0, 0.1, 0.2, 0.3]
-    assert message.positions[:, 0].tolist() == [0.0, 1.0, 2.0, 4.0]  # the original values, untouched
+    # the original values, untouched
+    assert message.positions[:, 0].tolist() == [0.0, 1.0, 2.0, 4.0]
     assert message.channels["wall"].tolist() == [0.0, 1.0, 3.0, 5.0]
     assert message.channels["mode"].tolist() == [1, 1, 2, 3]
     assert repair.changed and repair.policy == "drop_later"

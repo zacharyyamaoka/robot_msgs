@@ -151,6 +151,9 @@ def _header_ns(stamp_ns: int, frame_id: str) -> Any:
 
 @_to(Header, "std_msgs/msg/Header")
 def _header_to_ros(header: Header) -> Any:
+    # WHY `meta` is dropped here, always and without drop_extras: std_msgs/Header has only stamp
+    # and frame_id, and every stamped message exports through this one function. ROS consumers
+    # never had the context meta carries; robot_msgs files (to_dict, npz) keep it.
     sec, nanosec = header.to_sec_nanosec()
     return _ros("std_msgs/msg/Header")(
         stamp=_ros("builtin_interfaces/msg/Time")(sec=sec, nanosec=nanosec),

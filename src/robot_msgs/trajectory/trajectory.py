@@ -27,6 +27,8 @@ import numpy as np
 from robot_msgs._core import Array, FrozenDict, Msg, adopt, frozen_array, set_field, short_repr
 from robot_msgs.geometry.rotations import quat_slerp
 from robot_msgs.std import Header
+from robot_msgs.trajectory import time_repair
+from robot_msgs.trajectory.time_repair import DuplicateTimes, TimeRepair
 
 Interpolation = Literal["linear", "slerp", "hold"]
 Extrapolation = Literal["raise", "clamp"]
@@ -72,17 +74,23 @@ def _point_value(value: Any, dtype: Any) -> Any:
 
 @dataclass(frozen=True, eq=False, repr=False, kw_only=True)
 class TrajectoryPoint(Msg):
-    """One sample: its time and the value of every per-sample field at that time."""
+    """One sample: its time and the value of every per-sample field at that time.
+
+    `header` is the trajectory's: `t` counts from its stamp, and its frame and meta say what the
+    values are relative to. WHY a point carries it (ROS's points don't): a point taken out with
+    `traj[i]` or `traj.at(t)` would otherwise lose its frame, origin and units.
+    """
 
     t: float
     channels: Mapping[str, Any] = field(default_factory=dict)
+    header: Header = field(default_factory=Header)
 
     def __post_init__(self) -> None:
         set_field(self, "t", float(self.t))
         channels = {str(k): _point_value(v, None) for k, v in self.channels.items()}
         set_field(self, "channels", FrozenDict(channels))
         for f in dataclasses.fields(self):
-            if f.name not in ("t", "channels"):
+            if f.name not in ("t", "channels", "header"):
                 dtype = f.metadata.get("dtype", np.float64)
                 set_field(self, f.name, _point_value(getattr(self, f.name), dtype))
 
@@ -227,6 +235,7 @@ class Trajectory(Msg):
         return point_class(type(self))(
             t=self.t[index],
             channels={name: array[index] for name, array in self.channels.items()},
+            header=self.header,
             **values,
         )
 
@@ -258,9 +267,19 @@ class Trajectory(Msg):
     def from_points(
         cls: type[TrajectoryT], points: Sequence[TrajectoryPoint], **static: Any
     ) -> TrajectoryT:
-        """Stack points back into one trajectory; `static` sets the per-trajectory fields."""
+        """Stack points back into one trajectory; `static` sets the per-trajectory fields.
+
+        The header is the points' own (they must share one) unless `static` passes `header`.
+        """
         if not points:
             raise ValueError("from_points needs at least one point")
+        if "header" not in static:
+            header = points[0].header
+            if any(p.header != header for p in points):
+                raise ValueError(
+                    "points carry different headers (stamp, frame or meta); pass header=..."
+                )
+            static = {**static, "header": header}
         fields = {}
         for f in sample_fields(cls):
             values = [getattr(p, _point_name(f), None) for p in points]
@@ -275,6 +294,57 @@ class Trajectory(Msg):
         channels = {k: np.stack([np.asarray(p.channels[k]) for p in points]) for k in keys}
         times = [p.t for p in points]
         return cls(t=times, channels=channels, **fields, **static)
+
+    @classmethod
+    def from_samples(
+        cls: type[TrajectoryT],
+        *,
+        t: Any,
+        duplicate_times: DuplicateTimes,
+        **fields: Any,
+    ) -> tuple[TrajectoryT, TimeRepair]:
+        """Build from recorded samples whose stamps may repeat or step back; say what changed.
+
+        The constructor stays strict (interpolation needs strictly increasing `t`); this is the
+        explicit door for recordings. `duplicate_times` has no default, so every caller chooses:
+
+        - ``"error"``: construct as given; a repeated or backwards stamp raises.
+        - ``"drop_later"``: keep a sample only if its stamp is after every earlier kept one, so
+          the first of a repeat stays and backwards stamps go. Values are never altered.
+        - ``"average"``: merge samples at exactly the same stamp (floats averaged, quaternions on
+          the short arc, held values must agree); a backwards stamp is dropped.
+
+        Returns ``(trajectory, repair)``. When anything changed, `repair.as_meta()` is also written
+        into the trajectory's `header.meta` (beside the caller's), so the file says so too.
+        """
+        stamps = np.asarray(t, dtype=np.float64)
+        if stamps.ndim != 1:
+            raise ValueError(f"{cls.__name__}.t must be 1-D, got shape {stamps.shape}")
+        labels, repair = time_repair.plan(stamps, duplicate_times)
+        if not repair.changed:
+            return cls(t=stamps, **fields), repair
+        groups = repair.samples_out
+        kinds = {f.name: f.metadata["sample"] for f in sample_fields(cls)}
+
+        def reduce(name: str, value: Any, kind: str | None) -> np.ndarray:
+            array = np.asarray(value)
+            if array.ndim == 0 or array.shape[0] != stamps.shape[0]:
+                got = "a scalar" if array.ndim == 0 else f"{array.shape[0]} samples"
+                raise ValueError(f"{cls.__name__}.{name} has {got}, t has {stamps.shape[0]}")
+            return time_repair.merge(array, labels, groups, kind or "linear", name)
+
+        cleaned = dict(fields)
+        for name, kind in kinds.items():
+            if fields.get(name) is not None:
+                cleaned[name] = reduce(name, fields[name], kind)
+        cleaned["channels"] = {
+            name: reduce(f"channels[{name!r}]", value, None)
+            for name, value in dict(fields.get("channels") or {}).items()
+        }
+        header = fields.get("header") or Header()
+        cleaned["header"] = header.replace(meta={**header.meta, **repair.as_meta()})
+        times = time_repair.merge(stamps, labels, groups, "linear", "t")
+        return cls(t=times, **cleaned), repair
 
     # ── time ─────────────────────────────────────────────────────────────────
 
@@ -460,6 +530,11 @@ def concatenate(trajectories: Sequence[TrajectoryT]) -> TrajectoryT:
             raise TypeError(f"cannot concatenate {kind.__name__} with {type(other).__name__}")
         if other.header.frame_id != first.header.frame_id:
             raise ValueError("trajectories are in different frames")
+        if other.header.meta != first.header.meta:
+            raise ValueError(
+                f"trajectories carry different header meta: {dict(first.header.meta)} "
+                f"vs {dict(other.header.meta)}"
+            )
         if set(other.channels) != set(first.channels):
             raise ValueError("trajectories carry different channels")
         for name in static:

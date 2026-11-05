@@ -3,6 +3,7 @@
 from robot_msgs.trajectory.joint_limits import JointLimits
 from robot_msgs.trajectory.joint_trajectory import JointTrajectory, JointTrajectoryPoint
 from robot_msgs.trajectory.pose_trajectory import PoseTrajectory, PoseTrajectoryPoint
+from robot_msgs.trajectory.time_repair import TimeRepair
 from robot_msgs.trajectory.trajectory import (
     Trajectory,
     TrajectoryPoint,
@@ -18,6 +19,7 @@ __all__ = [
     "JointTrajectoryPoint",
     "PoseTrajectory",
     "PoseTrajectoryPoint",
+    "TimeRepair",
     "Trajectory",
     "TrajectoryPoint",
     "concatenate",

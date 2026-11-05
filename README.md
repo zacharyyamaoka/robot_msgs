@@ -57,6 +57,12 @@ increasing times). Anything else you want to send along rides as `channels`
 (`traj.with_channel("kp", kp)`); a new kind of trajectory subclasses `Trajectory` and declares
 its `sample()` fields — it gets indexing, interpolation, plotting and serialisation for free.
 
+Context ROS has no field for (an origin, units, provenance) rides `Header.meta`, a frozen
+`str → str` mapping that survives every view and file and is dropped on ROS export. A recording
+whose stamps repeat or step back is built with
+`JointTrajectory.from_samples(..., duplicate_times="drop_later" | "average" | "error")`, which
+returns `(trajectory, repair)` and writes the same receipt into `header.meta`; never silently.
+
 ## Packages
 
 | Import | Types |
@@ -65,7 +71,7 @@ its `sample()` fields — it gets indexing, interpolation, plotting and serialis
 | `robot_msgs.geometry` | `Vector3` `Point` `Quaternion` `Pose` `Pose2D` `Transform` `Twist` `Wrench` `Accel` `PoseStamped` `TransformStamped` · batch maths in `geometry.rotations` |
 | `robot_msgs.sensor` | `JointState` `Image` `CameraInfo` `PointCloud` `Imu` |
 | `robot_msgs.vision` | `BoundingBox2D` `BoundingBox3D` `ObjectHypothesis` `ObjectHypothesisWithPose` `Detection2D` `Detection2DArray` `Detection3D` `Detection3DArray` |
-| `robot_msgs.trajectory` | `Trajectory` `JointTrajectory` `PoseTrajectory` (+ points) `JointLimits` `concatenate` |
+| `robot_msgs.trajectory` | `Trajectory` `JointTrajectory` `PoseTrajectory` (+ points) `JointLimits` `concatenate` `TimeRepair` |
 | `robot_msgs.viz` `[viz]` | `plot(msg)` for every type, `animate(*trajectories, path=...)` |
 | `robot_msgs.ros` `[ros]` | `to_ros` / `from_ros` (ROS 2 Jazzy via rosbags), `write_bag` / `read_bag` (mcap) |
 
@@ -76,7 +82,7 @@ Every message: `==` and `hash` by value, a short `repr`, `replace(...)`, `to_dic
 
 SI units · quaternions `(x, y, z, w)` (MuJoCo/viser `wxyz` only through `xyzw_to_wxyz`) ·
 Euler = ROS roll-pitch-yaw (fixed X, Y, Z) · `a @ b` applies `b` in `a`'s frame ·
-`Header.stamp` float seconds, trajectory `t` relative to it · absent optional arrays are `None`.
+`Header.stamp` float seconds, trajectory `t` relative to it · `Header.meta` str → str · absent optional arrays are `None`.
 The full contract, what we keep from ROS and what we drop, and how to extend: [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Develop
