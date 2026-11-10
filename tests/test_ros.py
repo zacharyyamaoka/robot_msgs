@@ -12,7 +12,7 @@ from rosbags.rosbag2 import Reader
 from rosbags.typesys import Stores, get_typestore
 
 from robot_msgs import allclose
-from robot_msgs.geometry import Pose, PoseStamped, Twist, Vector3
+from robot_msgs.geometry import Inertia, Pose, PoseStamped, Twist, Vector3
 from robot_msgs.ros import from_ros, read_bag, ros_type, to_ros, typestore, write_bag
 from robot_msgs.sensor import CameraInfo, Image, Imu, JointState, PointCloud
 from robot_msgs.std import Header
@@ -93,6 +93,7 @@ def test_from_ros_rejects_unknown_messages():
 
 def test_ros_type_names():
     assert ros_type(JointState) == "sensor_msgs/msg/JointState"
+    assert ros_type(Inertia) == "geometry_msgs/msg/Inertia"
     assert ros_type(PointCloud) == "sensor_msgs/msg/PointCloud2"
     assert ros_type(PoseTrajectory) == "nav_msgs/msg/Path"
     assert ros_type(Detection2DArray) == "vision_msgs/msg/Detection2DArray"

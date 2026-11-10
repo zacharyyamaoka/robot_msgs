@@ -106,7 +106,7 @@ class JointState(Msg):
 | Package | Types (one file each) | ROS source |
 |---|---|---|
 | `robot_msgs.std` | `Header` | std_msgs |
-| `robot_msgs.geometry` | `Vector3`, `Point`, `Quaternion`, `Pose`, `Pose2D`, `Transform`, `Twist`, `Wrench`, `Accel`, `PoseStamped`, `TransformStamped`; batch math in `rotations.py` | geometry_msgs |
+| `robot_msgs.geometry` | `Vector3`, `Point`, `Quaternion`, `Pose`, `Pose2D`, `Transform`, `Twist`, `Wrench`, `Accel`, `Inertia`, `PoseStamped`, `TransformStamped`; batch math in `rotations.py` | geometry_msgs |
 | `robot_msgs.sensor` | `JointState`, `Image`, `CameraInfo`, `PointCloud`, `Imu` | sensor_msgs |
 | `robot_msgs.vision` | `BoundingBox2D`, `BoundingBox3D`, `ObjectHypothesis`, `ObjectHypothesisWithPose`, `Detection2D`, `Detection2DArray`, `Detection3D`, `Detection3DArray` | vision_msgs |
 | `robot_msgs.trajectory` | `Trajectory`, `TrajectoryPoint`, `JointTrajectory`, `JointTrajectoryPoint`, `PoseTrajectory`, `PoseTrajectoryPoint`, `JointLimits`, `concatenate` | trajectory_msgs, nav_msgs/Path |
@@ -131,6 +131,12 @@ class JointState(Msg):
 - `PoseStamped(header=Header(), pose=Pose())`, `TransformStamped(header=Header(),
   child_frame_id="", transform=Transform())`, `Twist(linear=Vector3(), angular=Vector3())`,
   `Wrench(force=Vector3(), torque=Vector3())`, `Accel(linear, angular)`, `Pose2D(x, y, theta)`.
+- `Inertia(m=0.0, com=Vector3(), ixx, ixy, ixz, iyy, iyz, izz)` (geometry_msgs/Inertia, tensor
+  about the centre of mass): `to_matrix()` / `from_matrix(m, com, I)` (symmetric only),
+  `rotated(q)` (`R·I·Rᵀ`), `is_physical()`, `as_array() -> (10,)`.
+- `rotations.euler_to_matrix(r, p, y)` / `matrix_to_euler(R)`: ROS RPY straight to and from
+  rotation matrices, no quaternion detour (a URDF `rpy` is printed verbatim); yaw = 0 at gimbal
+  lock.
 
 ## Trajectory — one entity, many views
 

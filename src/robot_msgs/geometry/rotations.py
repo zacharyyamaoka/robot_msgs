@@ -129,6 +129,48 @@ def quat_to_euler(q: np.ndarray) -> np.ndarray:
     return np.stack([roll, pitch, yaw], axis=-1)
 
 
+def euler_to_matrix(roll: np.ndarray, pitch: np.ndarray, yaw: np.ndarray) -> np.ndarray:
+    """ROS RPY straight to ``(..., 3, 3)`` rotation matrices, ``R = Rz(yaw)·Ry(pitch)·Rx(roll)``.
+
+    WHY direct (not through a quaternion): a URDF ``rpy`` and a scene file's angles are printed
+    verbatim; the quaternion detour costs the last digits, which shows up in every file written.
+    """
+    roll, pitch, yaw = (np.asarray(a, dtype=np.float64) for a in (roll, pitch, yaw))
+    cr, sr, cp, sp, cy, sy = (
+        np.cos(roll),
+        np.sin(roll),
+        np.cos(pitch),
+        np.sin(pitch),
+        np.cos(yaw),
+        np.sin(yaw),
+    )
+    rows = [
+        [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+        [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+        [-sp, cp * sr, cp * cr],
+    ]
+    return np.stack([np.stack(np.broadcast_arrays(*row), axis=-1) for row in rows], axis=-2)
+
+
+def matrix_to_euler(matrix: np.ndarray) -> np.ndarray:
+    """``(..., 3, 3)`` rotation matrices to ROS RPY, stacked ``(..., 3)`` = roll, pitch, yaw.
+
+    Pitch is in [-π/2, π/2]. At gimbal lock (|cos pitch| < 1e-9) only roll ∓ yaw is defined, and
+    the convention is tf's: yaw = 0 and the whole turn goes into roll.
+    """
+    m = np.asarray(matrix, dtype=np.float64)
+    if m.shape[-2:] != (3, 3):
+        raise ValueError(f"expected (..., 3, 3) rotation matrices, got {m.shape}")
+    r00, r10, r20 = m[..., 0, 0], m[..., 1, 0], m[..., 2, 0]
+    r11, r12, r21, r22 = m[..., 1, 1], m[..., 1, 2], m[..., 2, 1], m[..., 2, 2]
+    cos_pitch = np.sqrt(r00 * r00 + r10 * r10)
+    gimbal = cos_pitch < 1e-9
+    roll = np.where(gimbal, np.arctan2(-r12, r11), np.arctan2(r21, r22))
+    pitch = np.arctan2(-r20, cos_pitch)
+    yaw = np.where(gimbal, 0.0, np.arctan2(r10, r00))
+    return np.stack([roll, pitch, yaw], axis=-1)
+
+
 def quat_from_rotvec(rotvec: np.ndarray) -> np.ndarray:
     """Rotation vectors (axis × angle, radians) to quaternions."""
     v = np.asarray(rotvec, dtype=np.float64)

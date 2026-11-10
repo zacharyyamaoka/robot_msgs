@@ -18,6 +18,7 @@ import numpy as np
 from robot_msgs._core import Msg
 from robot_msgs.geometry import (
     Accel,
+    Inertia,
     Point,
     Pose,
     Pose2D,
@@ -255,6 +256,27 @@ def _wrench_to_ros(w: Wrench) -> Any:
 @_from("geometry_msgs/msg/Wrench")
 def _wrench_from_ros(ros: Any) -> Wrench:
     return Wrench(_vector3_from_ros(ros.force), _vector3_from_ros(ros.torque))
+
+
+@_to(Inertia, "geometry_msgs/msg/Inertia")
+def _inertia_to_ros(i: Inertia) -> Any:
+    return _ros("geometry_msgs/msg/Inertia")(
+        m=i.m,
+        com=_vector3_to_ros(i.com),
+        ixx=i.ixx,
+        ixy=i.ixy,
+        ixz=i.ixz,
+        iyy=i.iyy,
+        iyz=i.iyz,
+        izz=i.izz,
+    )
+
+
+@_from("geometry_msgs/msg/Inertia")
+def _inertia_from_ros(ros: Any) -> Inertia:
+    return Inertia(
+        ros.m, _vector3_from_ros(ros.com), ros.ixx, ros.ixy, ros.ixz, ros.iyy, ros.iyz, ros.izz
+    )
 
 
 @_to(Accel, "geometry_msgs/msg/Accel")

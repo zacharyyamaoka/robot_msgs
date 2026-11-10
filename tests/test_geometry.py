@@ -641,7 +641,7 @@ def test_package_reexports_every_type_and_the_rotation_module():
     import robot_msgs.geometry as geometry
 
     expected = {
-        "Accel", "Point", "Pose", "Pose2D", "PoseStamped", "Quaternion", "Transform",
+        "Accel", "Inertia", "Point", "Pose", "Pose2D", "PoseStamped", "Quaternion", "Transform",
         "TransformStamped", "Twist", "Vector3", "Wrench", "rotations",
     }  # fmt: skip
     assert set(geometry.__all__) == expected
