@@ -1,0 +1,29 @@
+# Publishes to PyPI when a version tag (v*) is pushed, through PyPI trusted publishing:
+# no API token is stored anywhere. One-time setup on pypi.org: a "pending publisher" for
+# project robot-msgs, owner zacharyyamaoka, repository robot_msgs, workflow publish.yml,
+# environment pypi.
+name: publish
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run --isolated --extra test python -m pytest -q
+        env:
+          MPLBACKEND: Agg
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - run: uv publish --trusted-publishing always

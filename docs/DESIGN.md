@@ -240,3 +240,17 @@ traj.header.meta["time_repair.dropped"]  # the same receipt, inside the trajecto
    application, not here.
 4. **A new standard type** (it exists in a ROS package and crosses a wire between domains) →
    add it here, one file, with a catalog example; the contract tests then cover it.
+
+## Storage is the cross-language contract; the API is the views
+
+Zach, 2026-11-10: *"I don't really care about the internal implementation, do it for the best
+performance on any language. With the views it can act however we want it to be."* So:
+
+- **What callers see is the views** — `traj.positions`, `traj[i]`, iteration, `at(t)`, slices.
+  They are the stable API; how a type stores its data behind them may change for speed.
+- **What crosses a language boundary is the storage**, and it is chosen to be zero-copy in every
+  language: one contiguous, little-endian, C-ordered array per field, time on axis 0
+  (struct-of-arrays). That is exactly an Arrow record batch, an `Eigen::Map`, an `ndarray` view in
+  Rust, or a flatbuffer vector — a C++ or Rust `robot_msgs` maps the same bytes without parsing.
+- **Field names, units, frames and conventions are the semantics**, bound early and identical in
+  every language; the technology (numpy today, C++/Rust bindings later) binds late.

@@ -7,10 +7,24 @@ name = "robot-msgs"
 version = "0.1.0"
 description = "Standard robot message types as frozen Python dataclasses, with the helper functions ROS messages never had."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Zach Yamaoka" }]
+keywords = ["robotics", "ros", "messages", "trajectory", "geometry", "dataclasses"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering",
+    "Intended Audience :: Science/Research",
+]
 requires-python = ">=3.11"
 # WHY numpy and nothing else: every message stores its numbers in the most compact form
 # (contiguous, read-only arrays) so batch views are free. Everything heavier is an extra.
 dependencies = ["numpy>=1.26"]
+
+[project.urls]
+Homepage = "https://robotmsgs.com"
+Source = "https://github.com/zacharyyamaoka/robot_msgs"
 
 [project.optional-dependencies]
 viz = ["matplotlib>=3.8"]
