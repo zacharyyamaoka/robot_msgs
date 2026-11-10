@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 
 from robot_msgs._core import Msg, set_field
+from robot_msgs.space import FloatValue
 
 MIN_NORM = 1e-12
 
@@ -23,7 +24,8 @@ def finite_float(owner: str, name: str, value: Any) -> float:
     number = float(value)
     if not math.isfinite(number):
         raise ValueError(f"{owner}.{name} must be finite, got {number}")
-    return number
+    # WHY keep a FloatValue: it IS a float, and robot_msgs.space samples and checks its range.
+    return value if isinstance(value, FloatValue) else number
 
 
 def expect_type(label: str, value: Any, expected: type) -> None:

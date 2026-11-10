@@ -18,6 +18,8 @@ from typing import Any, ClassVar, TypeVar
 
 import numpy as np
 
+from robot_msgs.space import Value
+
 Array = np.ndarray
 """Annotation alias for array fields. Arrays inside messages are always read-only."""
 
@@ -276,6 +278,9 @@ def _encode(value: Any, arrays: dict[str, np.ndarray] | None) -> Any:
         return [_encode(v, arrays) for v in value]
     if isinstance(value, np.generic):
         return value.item()
+    if isinstance(value, Value):
+        # WHY: the wire carries numbers; ranges and sources stay in Python (space.plain).
+        return value.value
     return value
 
 
