@@ -5,6 +5,7 @@ import numpy as np
 
 from robot_msgs.geometry import (
     Accel,
+    Inertia,
     Point,
     Pose,
     Pose2D,
@@ -74,6 +75,7 @@ EXAMPLES = [
     Twist(Vector3(0.1, 0, 0), Vector3(0, 0, 0.5)),
     Wrench(Vector3(0, 0, -9.81), Vector3(0.1, 0, 0)),
     Accel(Vector3(0, 0, 9.81), Vector3()),
+    Inertia(0.75, Vector3(0.0, 0.01, 0.04), 1.2e-3, 1.0e-6, -2.0e-6, 1.1e-3, 3.0e-6, 4.0e-4),
     PoseStamped(HEADER, POSE),
     TransformStamped(HEADER, "tool0", POSE.as_transform()),
     JointState(name=NAMES, position=[0.1, 0.2, 0.3], velocity=[0.0, 0.1, 0.0], header=HEADER),
