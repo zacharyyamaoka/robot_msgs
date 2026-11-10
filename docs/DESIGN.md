@@ -111,6 +111,7 @@ class JointState(Msg):
 | `robot_msgs.vision` | `BoundingBox2D`, `BoundingBox3D`, `ObjectHypothesis`, `ObjectHypothesisWithPose`, `Detection2D`, `Detection2DArray`, `Detection3D`, `Detection3DArray` | vision_msgs |
 | `robot_msgs.trajectory` | `Trajectory`, `TrajectoryPoint`, `JointTrajectory`, `JointTrajectoryPoint`, `PoseTrajectory`, `PoseTrajectoryPoint`, `JointLimits`, `concatenate` | trajectory_msgs, nav_msgs/Path |
 | `robot_msgs.compare` | `compare(reference, measured)` → `Comparison` (error trajectory + `ErrorStats` per metric), `align`, `error_stats`; also `traj.compare(other)` — numpy only | control_msgs/JointTrajectoryControllerState (error sign) |
+| `robot_msgs.coverage` | `binned(points, axes, reachable)` → `CoverageResult` (% of reachable cells visited), `occupancy`, `marginal`, `bin_index` (numpy.histogramdd's bins), `signed`, `random_plan`; continuous edges or `("levels", …)` axes. Which axes, edges and reachable cells a device type has is the caller's policy (sim2real), never here | — |
 | `robot_msgs.viz` | `plot(msg)` for every type above (matplotlib, `[viz]` extra) | — |
 | `robot_msgs.ros` | `to_ros(msg)` / `from_ros(ros_msg)` / `ros_type()` against ROS 2 Jazzy via rosbags' `typestore()` (vision_msgs 4.1.1 registered); `write_bag` / `read_bag` (mcap or sqlite3) — `[ros]` extra | — |
 
