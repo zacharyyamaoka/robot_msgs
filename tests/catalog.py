@@ -3,6 +3,7 @@ so adding a type without adding it here fails the suite."""
 
 import numpy as np
 
+from robot_msgs.compare import compare, error_stats
 from robot_msgs.geometry import (
     Accel,
     Inertia,
@@ -107,6 +108,9 @@ EXAMPLES = [
     JOINT_TRAJ,
     POSE_TRAJ[1],
     POSE_TRAJ,
+    error_stats([0.002, -0.001, 0.003]),
+    compare(JOINT_TRAJ, JOINT_TRAJ.replace(positions=JOINT_TRAJ.positions * 1.1)),
+    compare(POSE_TRAJ, POSE_TRAJ.shifted(dz=0.002), time_offset_s=0.0),
     Trajectory(t=[0.0], channels={"x": [1.0]})[0],
 ]
 

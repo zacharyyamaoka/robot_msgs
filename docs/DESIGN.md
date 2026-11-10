@@ -110,6 +110,7 @@ class JointState(Msg):
 | `robot_msgs.sensor` | `JointState`, `Image`, `CameraInfo`, `PointCloud`, `Imu` | sensor_msgs |
 | `robot_msgs.vision` | `BoundingBox2D`, `BoundingBox3D`, `ObjectHypothesis`, `ObjectHypothesisWithPose`, `Detection2D`, `Detection2DArray`, `Detection3D`, `Detection3DArray` | vision_msgs |
 | `robot_msgs.trajectory` | `Trajectory`, `TrajectoryPoint`, `JointTrajectory`, `JointTrajectoryPoint`, `PoseTrajectory`, `PoseTrajectoryPoint`, `JointLimits`, `concatenate` | trajectory_msgs, nav_msgs/Path |
+| `robot_msgs.compare` | `compare(reference, measured)` → `Comparison` (error trajectory + `ErrorStats` per metric), `align`, `error_stats`; also `traj.compare(other)` — numpy only | control_msgs/JointTrajectoryControllerState (error sign) |
 | `robot_msgs.viz` | `plot(msg)` for every type above (matplotlib, `[viz]` extra) | — |
 | `robot_msgs.ros` | `to_ros(msg)` / `from_ros(ros_msg)` / `ros_type()` against ROS 2 Jazzy via rosbags' `typestore()` (vision_msgs 4.1.1 registered); `write_bag` / `read_bag` (mcap or sqlite3) — `[ros]` extra | — |
 
@@ -226,6 +227,48 @@ traj.header.meta["time_repair.dropped"]  # the same receipt, inside the trajecto
   silent repair is not allowed. A cleaned recording that does not say so is indistinguishable
   from a clean one; the meta copy means the saved file says so too. Clean input changes nothing
   and stamps nothing.
+
+## Comparing trajectories — `robot_msgs.compare`
+
+Zach, 2026-11-10: *"literally this package is saying we are comparing two of these data types of
+robot msgs. The whole issue with ROS msgs is that they don't have enough of the helpers at arm's
+reach."* So comparison is a robot_msgs helper, built like `viz`: its own subpackage, one generic
+function dispatched on the type, and a one-line method (`traj.compare(other)`) so the type files
+stay the types. Viewers (traj_compare's HTML report, Rerun) live outside and read the values.
+
+```python
+result = target.compare(real)               # == compare(target, real)
+result.error                                # JointTrajectory: target - real, on real's samples
+result.metrics["positions/j2"].rms          # ErrorStats: n rms mean median std min max max_abs p95_abs final
+tip = lambda traj: PoseTrajectory.from_matrices(traj.t, fk(traj.positions), child_frame_id="L2 tip")
+tip(target).compare(tip(real)).metrics["lag"].median    # cartesian: one PoseTrajectory per point
+```
+
+Rules, each with its reason:
+
+1. **Pairwise.** `compare(reference, measured)`; N runs, or sim vs real with no target, is a loop.
+2. **`error = reference - measured`**, the ROS 2 `JointTrajectoryControllerState` convention, so a
+   positive error is the correction still to apply and a positive `lag` means the run is behind.
+3. **The error is the same type as its inputs**, so every view, plot and serialiser already works
+   on it. Derived forms ride along as channels: a pose error carries `rotation_vector` (world
+   axes; never a difference of Euler angles), `rotation_angle`, `lag` and `cross_track`.
+4. **Joint ↔ cartesian is not compare's job.** Build a `PoseTrajectory` per point you care about
+   (TCP, L2 tip, coupler) with your FK, name it in `child_frame_id`, and compare those.
+5. **One clock, no extrapolation.** Both runs are placed on `header.stamp + t`; measured samples
+   outside the reference are dropped (`dropped`), and `coverage` says how much of the reference
+   was measured. A known latency is an explicit `time_offset_s`, never guessed.
+6. **Errors on the measured run's own samples**, never on a shared resampled grid.
+7. **Every decision travels with the numbers.** `Comparison` holds `time_offset_s`, `dropped` and
+   `coverage` beside `error` and `metrics`, and round-trips through JSON/npz like any message.
+8. **Metric names are stable strings** (`positions/<joint>`, `position`, `rotation`, `x`…`rz`,
+   `lag`, `cross_track`, `channels/<name>`), so adding a metric never changes a type. `rows()`
+   gives them as tidy rows for tables.
+
+Not yet in (prior art: evo, trajectopy, ROS 2 `joint_trajectory_controller`, ISO 9283): exact
+contour error (nearest point on the reference path), latency estimation, relative/drift error
+over windows (evo RPE), tolerances with a pass/fail outcome (`path_tolerance`, `goal_tolerance`),
+accuracy vs repeatability across N runs (ISO 9283). Each is a new metric or a new function over
+`Comparison`s; none changes the shape above.
 
 ## Extending without forking
 

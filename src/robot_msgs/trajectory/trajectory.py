@@ -408,6 +408,19 @@ class Trajectory(Msg):
             raise KeyError(name)
         return self.replace(channels={k: v for k, v in self.channels.items() if k != name})
 
+    # ── comparison ───────────────────────────────────────────────────────────
+
+    def compare(self, measured: Trajectory, *, time_offset_s: float = 0.0) -> Any:
+        """`measured` against this trajectory as the reference → a `robot_msgs.compare.Comparison`.
+
+        The error signal (``self - measured``, same type) and its metrics; see
+        `robot_msgs.compare.compare`. WHY a one-line method: the analysis lives in its own
+        subpackage so this file stays the type, and the import stays inside robot_msgs.
+        """
+        from robot_msgs.compare import compare
+
+        return compare(self, measured, time_offset_s=time_offset_s)
+
     # ── interpolation ────────────────────────────────────────────────────────
 
     def at(self, time: float, *, extrapolate: Extrapolation = "raise") -> TrajectoryPoint:

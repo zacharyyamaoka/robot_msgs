@@ -212,7 +212,9 @@ def test_lag_and_cross_track_split_timing_from_path():
     np.testing.assert_allclose(cross[cruise], OFFSET_Y, atol=1e-9)
     resting = (t < 0.45) | (t > 2.55)
     assert np.isnan(lag[resting]).all() and np.isnan(cross[resting]).all()
-    assert result.metrics["lag"].mean == pytest.approx(SPEED * LAG_S, rel=1e-6)
+    # Median, not mean: the 50 ms ramp where the reference has started and the run has not
+    # is real (smaller) lag, so only the cruise value is exact.
+    assert result.metrics["lag"].median == pytest.approx(SPEED * LAG_S, rel=1e-6)
 
 
 def test_rotation_error_matches_scipy():
@@ -224,7 +226,9 @@ def test_rotation_error_matches_scipy():
     reference = PoseTrajectory(t=t, positions=positions, orientations=ref_rot.as_quat())
     measured = PoseTrajectory(t=t, positions=positions, orientations=meas_rot.as_quat())
     result = compare(reference, measured)
-    expected = (ref_rot * meas_rot.inv()).as_rotvec()  # world-frame rotation taking measured to reference
+    expected = (
+        ref_rot * meas_rot.inv()
+    ).as_rotvec()  # world-frame rotation taking measured to reference
     np.testing.assert_allclose(result.error.channels["rotation_vector"], expected, atol=1e-9)
     np.testing.assert_allclose(
         result.error.channels["rotation_angle"], np.linalg.norm(expected, axis=1), atol=1e-9
