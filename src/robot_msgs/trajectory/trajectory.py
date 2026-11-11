@@ -79,9 +79,12 @@ class TrajectoryPoint(Msg):
     `header` is the trajectory's: `t` counts from its stamp, and its frame and meta say what the
     values are relative to. WHY a point carries it (ROS's points don't): a point taken out with
     `traj[i]` or `traj.at(t)` would otherwise lose its frame, origin and units.
+
+    `t` defaults to 0: a point built by hand for a caller that is told the time separately
+    (`compare.ToleranceMonitor.step(t, reference_point, measured_point)`) has none of its own.
     """
 
-    t: float
+    t: float = 0.0
     channels: Mapping[str, Any] = field(default_factory=dict)
     header: Header = field(default_factory=Header)
 
@@ -410,7 +413,7 @@ class Trajectory(Msg):
 
     # ── comparison ───────────────────────────────────────────────────────────
 
-    def compare(self, measured: Trajectory, *, time_offset_s: float = 0.0) -> Any:
+    def compare(self, measured: Trajectory, *, time_offset_s: float = 0.0, **options: Any) -> Any:
         """`measured` against this trajectory as the reference → a `robot_msgs.compare.Comparison`.
 
         The error signal (``self - measured``, same type) and its metrics; see
@@ -419,7 +422,7 @@ class Trajectory(Msg):
         """
         from robot_msgs.compare import compare
 
-        return compare(self, measured, time_offset_s=time_offset_s)
+        return compare(self, measured, time_offset_s=time_offset_s, **options)
 
     # ── interpolation ────────────────────────────────────────────────────────
 

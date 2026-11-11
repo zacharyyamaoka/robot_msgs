@@ -253,7 +253,8 @@ Rules, each with its reason:
    positive error is the correction still to apply and a positive `lag` means the run is behind.
 3. **The error is the same type as its inputs**, so every view, plot and serialiser already works
    on it. Derived forms ride along as channels: a pose error carries `rotation_vector` (world
-   axes; never a difference of Euler angles), `rotation_angle`, `lag` and `cross_track`.
+   axes; never a difference of Euler angles), `rotation_angle`, `lag`, `cross_track`, `contour` and
+   `lag_time`.
 4. **Joint ↔ cartesian is not compare's job.** Build a `PoseTrajectory` per point you care about
    (TCP, L2 tip, coupler) with your FK, name it in `child_frame_id`, and compare those.
 5. **One clock, no extrapolation.** Both runs are placed on `header.stamp + t`; measured samples
@@ -263,14 +264,59 @@ Rules, each with its reason:
 7. **Every decision travels with the numbers.** `Comparison` holds `time_offset_s`, `dropped` and
    `coverage` beside `error` and `metrics`, and round-trips through JSON/npz like any message.
 8. **Metric names are stable strings** (`positions/<joint>`, `position`, `rotation`, `x`…`rz`,
-   `lag`, `cross_track`, `channels/<name>`), so adding a metric never changes a type. `rows()`
-   gives them as tidy rows for tables.
+   `lag`, `cross_track`, `contour`, `lag_time`, `channels/<name>`), so adding a metric never
+   changes a type. `rows()` gives them as tidy rows for tables.
+9. **A verdict speaks ROS 2.** `check(reference, measured, Tolerances(...))` returns an `Outcome`
+   whose `error_code` is `control_msgs/FollowJointTrajectory`'s (`SUCCESSFUL` 0,
+   `PATH_TOLERANCE_VIOLATED` -4, `GOAL_TOLERANCE_VIOLATED` -5), with `JointTolerance` /
+   `PoseTolerance` limits where 0 and -1 mean "not checked" (a `Tolerances` already is the
+   controller default set; merging a per-goal tolerance onto it is the caller's job). The path
+   phase is the measured samples inside the reference; the goal phase starts at the reference's end
+   (inclusive) and is judged against its final point held, the controller's own convention and the
+   one place a held reference is legitimate, never used for a path statistic.
+   `stopped_velocity_tolerance` is the default goal velocity limit on every joint. A velocity or
+   acceleration limit with no data raises; a default that cannot be checked (a measured run with
+   no velocities) is named in `Outcome.unchecked`, never a silent pass. `ToleranceMonitor` is the
+   same rule fed one tick at a time (what a controller runs); both go through one per-sample
+   function, so online and offline can never disagree.
+10. **N runs split into bias and spread (ISO 9283).** `aggregate(reference, runs)` resamples every
+    run onto the reference instants they all cover, takes the barycentre, and returns the bias
+    (`accuracy` = `compare(reference, barycentre)`) and the spread (`repeatability`, per instant
+    RP = l̄ + 3·S_l, S_l with ddof=1). Per-sample error arrays are not averaged across runs (evo's
+    `merge_results`): they only mean something on identical timelines, and a mean of signed
+    errors hides the spread.
+11. **Latency is estimated, then passed explicitly.** `estimate_time_offset` cross-correlates the
+    velocities for a coarse lag and refines by minimising the position RMS; its `offset_s` has
+    `align`'s sign. `compare` never applies it on its own (rule 5).
+12. **Contour is exact, cross-track is first-order.** `lag` / `cross_track` split the error along
+    the reference's tangent (no search, leaks lag into cross-track on curves). `contour` is the
+    distance to the nearest point of the reference polyline, `lag_time` the seconds behind that
+    point (`+` = behind), searched only within `contour_window_s` of the sample's reference time so
+    a retraced route cannot snap to its other pass.
+13. **Goal, settling and overshoot (`goal`).** `GoalStats` per joint / pose, MATLAB `stepinfo`'s
+    conventions: settling time is NaN when the run never stays inside the band (never "the end of
+    the data"); overshoot is past the final value along the reference's net move, as a percent of
+    that move. Same held-final rule as rule 9, shared code.
+14. **Drift is relative (`relative_error`).** evo's RPE over windows of seconds or metres of the
+    reference's path: a constant offset cancels, a drift does not.
+15. **Shape without time is `frechet`.** Eiter–Mannila discrete Fréchet over the position curves,
+    no alignment; a run on the right path at the wrong speed scores near 0 here and badly in
+    `compare`.
+16. **Every `ErrorStats` carries `iae` / `ise` / `itae`** (trapezoids over intervals observed at
+    both ends; NaN without a time axis, so older serialised data still loads).
+17. **The time base travels with the error.** Measured `speed_scaling` and `segment_index`
+    channels (`TIME_BASE_CHANNELS`) are copied verbatim as `time_base/<name>` and never
+    differenced or summarised: a speed-scaled run's timing error is expected, and has to be read
+    against the scaling.
 
-Not yet in (prior art: evo, trajectopy, ROS 2 `joint_trajectory_controller`, ISO 9283): exact
-contour error (nearest point on the reference path), latency estimation, relative/drift error
-over windows (evo RPE), tolerances with a pass/fail outcome (`path_tolerance`, `goal_tolerance`),
-accuracy vs repeatability across N runs (ISO 9283). Each is a new metric or a new function over
-`Comparison`s; none changes the shape above.
+Prior art behind the rules: evo and trajectopy (alignment, pose error, RPE, time shift), ROS 2
+`joint_trajectory_controller` and `control_msgs` (tolerances, result codes), ISO 9283
+(accuracy / repeatability), CNC contouring (contour and lag), MATLAB `stepinfo` (settling,
+overshoot), Eiter–Mannila (Fréchet).
+
+Not yet in: MCAP / Parquet export of a `Comparison` (that lives in traj_compare, not here), and
+any viewer. Each further analysis is a new metric or a new function over trajectories; none
+changes the shape above.
 
 ## Shapes — solids for any 3-D scene
 

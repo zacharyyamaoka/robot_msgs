@@ -32,6 +32,15 @@ UNMAPPED = {
     # a file reference: shape_msgs has no file mesh (only visualization_msgs Marker MESH_RESOURCE,
     # which also needs a pose, colour and header of its own)
     "MeshResource",
+    # control_msgs/JointTolerance exists, but the Jazzy typestore has no control_msgs
+    "JointTolerance",
+    "PoseTolerance",
+    "Tolerances",
+    "Violation",
+    "Outcome",
+    "Aggregate",
+    "TimeOffsetEstimate",
+    "GoalStats",
 }
 
 
@@ -54,7 +63,7 @@ MAPPED = [m for m in EXAMPLES if type(m).__name__ not in UNMAPPED]
 
 def test_catalog_is_split_into_mapped_and_unmapped():
     assert {type(m).__name__ for m in EXAMPLES if type(m).__name__ in UNMAPPED} == UNMAPPED
-    assert len(MAPPED) + 9 == len(EXAMPLES)
+    assert len(MAPPED) + 17 == len(EXAMPLES)
 
 
 @pytest.mark.parametrize("msg", MAPPED, ids=lambda m: type(m).__name__)

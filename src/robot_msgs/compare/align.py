@@ -6,7 +6,7 @@ from typing import TypeVar
 
 import numpy as np
 
-from robot_msgs.trajectory import Trajectory
+from robot_msgs.trajectory import JointTrajectory, Trajectory
 
 TrajectoryT = TypeVar("TrajectoryT", bound=Trajectory)
 
@@ -51,3 +51,18 @@ def align(
     else:
         coverage = 1.0
     return reference_at, measured_inside, int(np.count_nonzero(~inside)), coverage
+
+
+def match_joints(reference: JointTrajectory, measured: JointTrajectory) -> JointTrajectory:
+    """The reference on the measured run's joints, in the measured run's order (matched by name).
+
+    Raises `ValueError` naming the joints that differ, rather than comparing a subset by accident.
+    """
+    missing = [name for name in reference.joint_names if name not in measured.joint_names]
+    extra = [name for name in measured.joint_names if name not in reference.joint_names]
+    if missing or extra:
+        raise ValueError(
+            f"joints differ: measured lacks {missing}, reference lacks {extra}; "
+            "use .select(names) on either side to compare a subset"
+        )
+    return reference.select(measured.joint_names)
