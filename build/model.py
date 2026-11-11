@@ -30,7 +30,18 @@ TOUR = ROBOT_MSGS_DIR / "examples" / "tour.py"
 DESIGN = ROBOT_MSGS_DIR / "docs" / "DESIGN.md"
 
 # WHY this order (Zach): the sidebar reads std, geometry, sensor, vision, trajectory.
-PACKAGE_ORDER = ("std", "geometry", "sensor", "vision", "trajectory")
+# shape sits beside geometry (solids of a scene); compare comes last (it reads the others).
+PACKAGE_ORDER = ("std", "geometry", "shape", "sensor", "vision", "trajectory", "compare")
+
+
+def domains_in(types) -> list[str]:
+    """Every domain that has types, preferred order first, then any new one alphabetically.
+
+    WHY: a hardcoded list silently dropped new robot_msgs domains (shape, compare) from the
+    index while their pages were still built; a new domain must show up without a site edit.
+    """
+    present = {t.domain for t in types}
+    return [d for d in PACKAGE_ORDER if d in present] + sorted(present - set(PACKAGE_ORDER))
 
 # Dunder methods that are plumbing, not API. Anything else a robot_msgs class defines
 # (__getitem__, __matmul__, __add__ ...) is an operator worth showing.

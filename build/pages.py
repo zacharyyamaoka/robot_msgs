@@ -6,7 +6,7 @@ import html
 import re
 
 from highlight import highlight
-from model import PACKAGE_ORDER, FnInfo, TypeInfo
+from model import FnInfo, TypeInfo, domains_in
 
 GITHUB = "https://github.com/zacharyyamaoka/robot_msgs"
 GROUP_TITLES = {
@@ -161,7 +161,7 @@ def sidebar_html(
         )
         + "</ul></div>"
     ]
-    for domain in PACKAGE_ORDER:
+    for domain in domains_in(types):
         members = [t for t in types if t.domain == domain]
         if not members:
             continue
@@ -187,7 +187,7 @@ def sidebar_html(
 
 
 def home(types: list[TypeInfo], tour_code: str, tour_output: str, **ctx) -> str:
-    domains = [d for d in PACKAGE_ORDER if any(t.domain == d for t in types)]
+    domains = domains_in(types)
     packages = "".join(
         f'<a class="pkg" href="/types/#{d}"><span class="pkg-name">{d}</span>'
         f'<span class="pkg-n">{plural(sum(t.domain == d for t in types))}</span></a>'
@@ -238,7 +238,7 @@ def home(types: list[TypeInfo], tour_code: str, tour_output: str, **ctx) -> str:
 def types_index(types: list[TypeInfo], **ctx) -> str:
     toc = [("all-types", "All types", 2)]
     sections = []
-    for domain in PACKAGE_ORDER:
+    for domain in domains_in(types):
         members = [t for t in types if t.domain == domain]
         if not members:
             continue
@@ -280,7 +280,7 @@ def docs_page(types: list[TypeInfo], conventions: list[tuple[str, str]], **ctx) 
         f'<tr><th scope="row"><code>robot_msgs.{d}</code></th><td>'
         + " ".join(link(t) for t in types if t.domain == d)
         + "</td></tr>"
-        for d in PACKAGE_ORDER
+        for d in domains_in(types)
     )
     ros_rows = "".join(
         f'<tr><th scope="row">{link(t)}</th><td><code>{esc(t.ros_type)}</code></td></tr>'
