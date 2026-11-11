@@ -17,7 +17,8 @@ from collections.abc import Mapping
 from typing import Any, ClassVar, TypeVar
 
 import numpy as np
-from dataclass_values import Value
+
+from robot_msgs.space import Value
 
 Array = np.ndarray
 """Annotation alias for array fields. Arrays inside messages are always read-only."""

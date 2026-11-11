@@ -58,11 +58,9 @@ def test_values_are_hashable_immutable_and_print_short(message):
         assert len(repr(message)) < 400  # arrays print as float64[500×6], never their values
 
 
-def test_runtime_dependencies_are_numpy_and_dataclass_values():
-    # WHY dataclass-values: the stdlib-only Value/Space layer shared with py_dataclass_viewer
-    # (Zach, 2026-11-10)
+def test_runtime_dependencies_are_numpy_only():
     pyproject = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())
-    assert pyproject["project"]["dependencies"] == ["numpy>=1.26", "dataclass-values>=0.1.0"]
+    assert pyproject["project"]["dependencies"] == ["numpy>=1.26"]
     probe = (
         "import sys, robot_msgs; "
         "print(sorted({m.split('.')[0] for m in sys.modules} & "

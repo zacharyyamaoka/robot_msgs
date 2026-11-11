@@ -9,7 +9,7 @@ point, turning a depth image into a cloud: first-class methods, not separate lib
   install, no codegen. ROS 2 messages and bags are an export (`robot_msgs.ros`).
 - **Immutable values over compact numpy storage.** Every message is frozen; its arrays are
   read-only, so slices, rows and columns are free views.
-- **Runtime dependencies: numpy and the stdlib-only `dataclass-values` (`Value`/`Space`).** Plots (`[viz]`) and ROS export (`[ros]`) are extras.
+- **One runtime dependency: numpy.** Plots (`[viz]`) and ROS export (`[ros]`) are extras.
 
 ## A trajectory is one entity with many views
 
