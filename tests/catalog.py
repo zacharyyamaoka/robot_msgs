@@ -14,7 +14,17 @@ from robot_msgs.compare import (
     estimate_time_offset,
     goal,
 )
-from robot_msgs.control import ServoCommand, ServoState
+from robot_msgs.control import (
+    Elapsed,
+    JointCommand,
+    JointCommandSequence,
+    JointCommandStep,
+    Reached,
+    ServoCommand,
+    ServoState,
+    Settled,
+    Stall,
+)
 from robot_msgs.geometry import (
     Accel,
     Inertia,
@@ -123,6 +133,53 @@ EXAMPLES = [
         state_stamp=HEADER.stamp,
         state_seq=812,
         header=HEADER.replace(stamp=HEADER.stamp + 0.0021),
+    ),
+    JointCommand.to("j2", 1.9, speed=0.3, max_effort=4.0, feedforward_effort=0.5),
+    Elapsed(duration=3.0),
+    Settled(joints=("j2", "c1"), speed=0.01, dwell=0.5),
+    Reached(joints=("j2",), tolerance=0.01),
+    Stall(joint="c1", lead=0.08),
+    JointCommandStep(
+        name="define",
+        commands=(JointCommand.hold("j2", max_effort=10.0), JointCommand.limp("c1")),
+        done_when=(Stall(joint="j2"), Elapsed(duration=5.0)),
+        timeout=8.0,
+        define_position={"j2": 1.9967},
+    ),
+    JointCommandSequence(
+        name="home",
+        joint_names=("j2", "c1"),
+        max_speed=3.0,
+        steps=(
+            JointCommandStep(
+                name="settle",
+                commands=(JointCommand.limp("j2"), JointCommand.limp("c1")),
+                done_when=(
+                    Elapsed(duration=3.0),
+                    Settled(joints=("j2", "c1"), speed=0.01, dwell=0.5),
+                ),
+                timeout=10.0,
+            ),
+            JointCommandStep(
+                name="seek stop",
+                commands=(
+                    JointCommand.move_by("j2", 2.0, speed=0.15, max_effort=8.0),
+                    JointCommand.hold("c1", max_effort=6.0),
+                ),
+                done_when=(Stall(joint="j2"),),
+                timeout=30.0,
+                define_position={"j2": 1.9967},
+            ),
+            JointCommandStep(
+                name="home",
+                commands=(
+                    JointCommand.to("j2", 1.9, speed=0.3, max_effort=4.0, feedforward_effort=0.5),
+                    JointCommand.hold("c1", max_effort=6.0),
+                ),
+                done_when=(Reached(joints=("j2",), tolerance=0.01),),
+                timeout=20.0,
+            ),
+        ),
     ),
     Image.from_array(RNG.integers(0, 255, size=(48, 64, 3), dtype=np.uint8), header=HEADER),
     CAMERA,

@@ -329,7 +329,12 @@ def _decode(value: Any, hint: Any, arrays: Mapping[str, np.ndarray] | None) -> A
     args = typing.get_args(hint)
     if origin in (typing.Union, types.UnionType):
         options = [a for a in args if a is not type(None)]
-        return _decode(value, options[0], arrays) if len(options) == 1 else value
+        if len(options) == 1:
+            return _decode(value, options[0], arrays)
+        # WHY: a union of messages (JointCommandStep.done_when) is told apart by its "_type" key.
+        if isinstance(value, Mapping) and "_type" in value:
+            return from_dict(value, arrays=arrays)
+        return value
     if hint is np.ndarray or origin is np.ndarray:
         return _decode_array(value, arrays)
     if isinstance(hint, type) and issubclass(hint, Msg):
