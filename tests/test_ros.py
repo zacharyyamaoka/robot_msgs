@@ -15,7 +15,8 @@ from robot_msgs import allclose
 from robot_msgs.geometry import Inertia, Pose, PoseStamped, Twist, Vector3
 from robot_msgs.ros import from_ros, read_bag, ros_type, to_ros, typestore, write_bag
 from robot_msgs.sensor import CameraInfo, Image, Imu, JointState, PointCloud
-from robot_msgs.std import Header
+from robot_msgs.shape import Mesh, Plane, SolidPrimitive
+from robot_msgs.std import ColorRGBA, Header
 from robot_msgs.trajectory import JointLimits, JointTrajectory, PoseTrajectory, Trajectory
 from robot_msgs.vision import Detection2DArray, ObjectHypothesisWithPose
 
@@ -28,6 +29,9 @@ UNMAPPED = {
     # robot_msgs.compare results: ROS has no message for a trajectory comparison
     "ErrorStats",
     "Comparison",
+    # a file reference: shape_msgs has no file mesh (only visualization_msgs Marker MESH_RESOURCE,
+    # which also needs a pose, colour and header of its own)
+    "MeshResource",
 }
 
 
@@ -50,7 +54,7 @@ MAPPED = [m for m in EXAMPLES if type(m).__name__ not in UNMAPPED]
 
 def test_catalog_is_split_into_mapped_and_unmapped():
     assert {type(m).__name__ for m in EXAMPLES if type(m).__name__ in UNMAPPED} == UNMAPPED
-    assert len(MAPPED) + 8 == len(EXAMPLES)
+    assert len(MAPPED) + 9 == len(EXAMPLES)
 
 
 @pytest.mark.parametrize("msg", MAPPED, ids=lambda m: type(m).__name__)
@@ -100,6 +104,10 @@ def test_ros_type_names():
     assert ros_type(PointCloud) == "sensor_msgs/msg/PointCloud2"
     assert ros_type(PoseTrajectory) == "nav_msgs/msg/Path"
     assert ros_type(Detection2DArray) == "vision_msgs/msg/Detection2DArray"
+    assert ros_type(SolidPrimitive) == "shape_msgs/msg/SolidPrimitive"
+    assert ros_type(Mesh) == "shape_msgs/msg/Mesh"
+    assert ros_type(Plane) == "shape_msgs/msg/Plane"
+    assert ros_type(ColorRGBA) == "std_msgs/msg/ColorRGBA"
 
 
 # ── typestore ────────────────────────────────────────────────────────────────
@@ -641,3 +649,58 @@ def catalog_example(cls):
         if type(message) is cls:
             return message
     raise LookupError(cls)
+
+
+# ── shape_msgs and ColorRGBA ─────────────────────────────────────────────────
+
+
+def test_solid_primitive_constants_and_indices_are_the_ros_ones():
+    ros = typestore().types["shape_msgs/msg/SolidPrimitive"]
+    for name in (
+        "BOX", "SPHERE", "CYLINDER", "CONE", "PRISM",
+        "BOX_X", "BOX_Y", "BOX_Z", "SPHERE_RADIUS", "CYLINDER_HEIGHT", "CYLINDER_RADIUS",
+        "CONE_HEIGHT", "CONE_RADIUS", "PRISM_HEIGHT",
+    ):  # fmt: skip
+        assert getattr(SolidPrimitive, name) == getattr(ros, name), name
+
+
+def test_solid_primitive_fields():
+    cylinder = to_ros(SolidPrimitive.cylinder(height=0.6, radius=0.15))
+    assert cylinder.type == 3 and list(cylinder.dimensions) == [0.6, 0.15]
+    assert list(cylinder.polygon.points) == []
+    prism = to_ros(SolidPrimitive.prism(0.4, [(0, 0), (2, 0), (1, 1)]))
+    assert prism.type == 5 and list(prism.dimensions) == [0.4]
+    assert [(p.x, p.y, p.z) for p in prism.polygon.points] == [(0, 0, 0), (2, 0, 0), (1, 1, 0)]
+    back = from_ros(over_the_wire(prism))
+    assert back.polygon.tolist() == [[0, 0], [2, 0], [1, 1]] and back.height == 0.4
+
+
+def test_mesh_fields_are_triangles_of_vertex_indices_and_points():
+    mesh = SolidPrimitive.box(1.0, 2.0, 3.0).to_mesh()
+    ros = to_ros(mesh)
+    assert len(ros.vertices) == 8 and len(ros.triangles) == 12
+    assert [list(t.vertex_indices) for t in ros.triangles] == mesh.triangles.tolist()
+    assert [(p.x, p.y, p.z) for p in ros.vertices] == [tuple(v) for v in mesh.vertices.tolist()]
+    assert round_trip(mesh) == mesh
+
+
+def test_plane_coef_and_colour_channels():
+    assert list(to_ros(Plane([0.0, 0.0, 1.0, -0.5])).coef) == [0.0, 0.0, 1.0, -0.5]
+    ros = to_ros(ColorRGBA(0.5, 0.25, 0.75, 0.125))
+    assert (ros.r, ros.g, ros.b, ros.a) == (0.5, 0.25, 0.75, 0.125)
+    # std_msgs/ColorRGBA is float32: 1/255 steps survive to the nearest float32
+    color = ColorRGBA.from_hex("#336699")
+    assert round_trip(color).to_hex() == "#336699"
+
+
+def test_an_empty_ros_mesh_and_a_prism_without_polygon_points():
+    store = typestore()
+    empty = store.types["shape_msgs/msg/Mesh"](triangles=[], vertices=[])
+    assert len(from_ros(empty)) == 0
+    bare = store.types["shape_msgs/msg/SolidPrimitive"](
+        type=5,
+        dimensions=np.array([1.0]),
+        polygon=store.types["geometry_msgs/msg/Polygon"](points=[]),
+    )
+    with pytest.raises(ValueError, match="PRISM needs a polygon"):
+        from_ros(bare)

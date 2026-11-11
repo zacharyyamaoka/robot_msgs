@@ -14,7 +14,7 @@ try:
 except ImportError as error:
     raise ImportError("robot_msgs.viz needs matplotlib: pip install 'robot-msgs[viz]'") from error
 
-from robot_msgs.viz import images, spatial, trajectory  # noqa: F401  (each registers its plots)
+from robot_msgs.viz import images, shapes, spatial, trajectory  # noqa: F401  (each registers its plots)
 from robot_msgs.viz._dispatch import plot
 from robot_msgs.viz.movie import animate
 

@@ -18,7 +18,8 @@ from robot_msgs.geometry import (
     Wrench,
 )
 from robot_msgs.sensor import CameraInfo, Image, Imu, JointState, PointCloud
-from robot_msgs.std import Header
+from robot_msgs.shape import MeshResource, Plane, SolidPrimitive
+from robot_msgs.std import ColorRGBA, Header
 from robot_msgs.trajectory import (
     JointLimits,
     JointTrajectory,
@@ -65,8 +66,11 @@ DETECTION2D = Detection2D(header=HEADER, results=(HYPOTHESIS,), bbox=BOX2D, id="
 DETECTION3D = Detection3D(header=HEADER, results=(HYPOTHESIS,), bbox=BOX3D, id="7")
 CAMERA = CameraInfo.from_intrinsics(615.0, 615.0, 320.0, 240.0, 640, 480, header=HEADER)
 
+L_PRISM = SolidPrimitive.prism(0.4, [(0, 0), (2, 0), (2, 1), (1, 1), (1, 2), (0, 2)])
+
 EXAMPLES = [
     HEADER,
+    ColorRGBA(0.5, 0.25, 0.75, 1.0),
     Vector3(1.0, -2.0, 0.5),
     Point(0.1, 0.2, 0.3),
     Quaternion.from_euler(0.1, 0.2, 0.3),
@@ -111,6 +115,14 @@ EXAMPLES = [
     error_stats([0.002, -0.001, 0.003]),
     compare(JOINT_TRAJ, JOINT_TRAJ.replace(positions=JOINT_TRAJ.positions * 1.1)),
     compare(POSE_TRAJ, POSE_TRAJ.shifted(dz=0.002), time_offset_s=0.0),
+    SolidPrimitive.box(0.3, 0.2, 0.5),
+    SolidPrimitive.sphere(0.25),
+    SolidPrimitive.cylinder(0.6, 0.15),
+    SolidPrimitive.cone(0.5, 0.2),
+    L_PRISM,
+    SolidPrimitive.cone(0.5, 0.2).to_mesh(12),
+    Plane.from_point_normal(Point(0.0, 0.0, 0.75), Vector3(0.0, 0.0, 1.0)),
+    MeshResource("package://bam_arm/meshes/link1.stl", scale=Vector3(0.001, 0.001, 0.001)),
     Trajectory(t=[0.0], channels={"x": [1.0]})[0],
 ]
 

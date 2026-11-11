@@ -32,7 +32,8 @@ import robot_msgs  # noqa: E402
 from robot_msgs.geometry import PoseStamped, TransformStamped  # noqa: E402
 from robot_msgs.geometry.rotations import quat_to_euler  # noqa: E402
 from robot_msgs.sensor import Image, JointState, PointCloud  # noqa: E402
-from robot_msgs.std import Header  # noqa: E402
+from robot_msgs.shape import MeshResource, Plane, SolidPrimitive  # noqa: E402
+from robot_msgs.std import ColorRGBA, Header  # noqa: E402
 from robot_msgs.trajectory import (  # noqa: E402
     JointLimits,
     JointTrajectory,
@@ -102,6 +103,10 @@ def test_the_standard_types_all_have_a_plot():
         "BoundingBox3D",
         "PointCloud",
         "CameraInfo",
+        "SolidPrimitive",
+        "Mesh",
+        "Plane",
+        "ColorRGBA",
     }
     assert wanted <= {type(m).__name__ for m in DRAWABLE}
 
@@ -670,3 +675,55 @@ def test_importing_robot_msgs_never_imports_viz_or_matplotlib():
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "[]"
+
+
+# ── shapes ───────────────────────────────────────────────────────────────────
+
+
+def faces_of(collection) -> np.ndarray:
+    return np.asarray(collection._faces)  # (M, 3, 3): the triangles in 3-D, not their projection
+
+
+def test_mesh_is_one_polygon_per_triangle_at_the_vertices():
+    mesh = SolidPrimitive.cone(0.5, 0.2).to_mesh(12)
+    ax = plot(mesh).axes[0]
+    (collection,) = [c for c in ax.collections if c.get_gid() == "mesh"]
+    np.testing.assert_allclose(faces_of(collection), mesh.vertices[mesh.triangles])
+    assert f"{len(mesh)} triangles" in ax.get_title("left")
+
+
+def test_solid_primitive_draws_its_mesh_and_names_its_type():
+    solid = SolidPrimitive.box(0.3, 0.2, 0.5)
+    ax = plot(solid).axes[0]
+    (collection,) = [c for c in ax.collections if c.get_gid() == "mesh"]
+    np.testing.assert_allclose(
+        faces_of(collection), solid.to_mesh().vertices[solid.to_mesh().triangles]
+    )
+    assert "BOX" in ax.get_title("left")
+    # equal axes: the longest dimension spans the longest axis, the same metre on every axis
+    assert max(ax.get_xlim()[1] - ax.get_xlim()[0], ax.get_zlim()[1] - ax.get_zlim()[0]) > 0.5
+
+
+def test_plane_is_a_patch_in_the_plane_with_its_normal_arrow():
+    plane = Plane.from_point_normal([0.0, 0.0, 0.5], [0.0, 0.0, 1.0])
+    ax = plot(plane).axes[0]
+    (patch,) = [c for c in ax.collections if c.get_gid() == "plane"]
+    corners = faces_of(patch).reshape(-1, 3)
+    assert plane.distance(corners) == pytest.approx(0.0, abs=1e-12)
+    assert np.ptp(corners[:, 0]) > 0 and np.ptp(corners[:, 1]) > 0
+    (arrow,) = lines(plot(plane), "normal")
+    start, end = np.asarray(arrow._verts3d).T
+    assert (end - start) / np.linalg.norm(end - start) == pytest.approx([0, 0, 1])
+    assert np.linalg.norm(end - start) > 0
+
+
+def test_color_is_a_swatch_of_its_own_colour_with_its_hex():
+    color = ColorRGBA(0.2, 0.4, 0.6, 0.5)
+    ax = plot(color).axes[0]
+    (swatch,) = [p for p in ax.patches if p.get_gid() == "swatch"]
+    assert tuple(swatch.get_facecolor()) == pytest.approx((0.2, 0.4, 0.6, 0.5))
+    assert color.to_hex() in [t.get_text() for t in ax.texts]
+
+
+def test_mesh_resource_has_no_plot_because_a_file_is_not_read_here():
+    assert not has_plot(MeshResource("a.stl"))
