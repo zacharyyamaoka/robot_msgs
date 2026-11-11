@@ -195,7 +195,29 @@ def show(*messages: Msg, **named: Msg) -> rr.RecordingStream:
 
     Keyword names become the line names, so ``show(target=a, real=b)`` overlays the two.
     """
-    stream = recording(*messages, **named)
+    return view(recording(*messages, **named))
+
+
+def compose(
+    *entries: tuple[str, Msg], application_id: str = APPLICATION_ID, into: str | None = None
+) -> rr.RecordingStream:
+    """One recording of ``(name, message)`` pairs, its default dashboard sent; a name may repeat.
+
+    WHY pairs and not keywords (2026-11-11): a run's recording holds each trajectory and its
+    Comparison under one name (``("real", real), ("real", compare(target, real))``), which keyword
+    arguments cannot. ``into`` saves the recording to that ``.rrd`` path as it is logged.
+    """
+    stream = rr.RecordingStream(application_id)
+    if into is not None:
+        stream.save(into)
+    for name, msg in entries:
+        log(msg, name, recording=stream)
+    _finish(stream)
+    return stream
+
+
+def view(stream: rr.RecordingStream) -> rr.RecordingStream:
+    """Open the Rerun viewer on a recording (a notebook cell shows it inline)."""
     if _in_notebook():
         stream.notebook_show()
     else:
@@ -245,7 +267,7 @@ def _columns(traj: Trajectory, field_name: str, values: np.ndarray) -> list[str]
     return [str(i) for i in range(width)]
 
 
-def _series(traj: Trajectory, name: str, stream: rr.RecordingStream) -> None:
+def _series(traj: Trajectory, name: str, stream: rr.RecordingStream, prefix: str = "") -> None:
     t = np.asarray(traj.t, dtype=np.float64)
     seconds = t - t[0] if t.size else t
     arrays: dict[str, np.ndarray] = {}
@@ -260,7 +282,7 @@ def _series(traj: Trajectory, name: str, stream: rr.RecordingStream) -> None:
             continue
         flat = values.reshape(len(t), -1).astype(np.float64)
         for column, label in enumerate(_columns(traj, field_name.split("/")[-1], values)):
-            path = f"{field_name}/{_part(label)}/{_part(name)}"
+            path = f"{prefix}{field_name}/{_part(label)}/{_part(name)}"
             _log(stream, path, rr.SeriesLines(names=name), static=True)
             _send(
                 stream,
@@ -297,7 +319,10 @@ def _(traj: PoseTrajectory, name: str | None = None, *, recording: rr.RecordingS
 @log.register
 def _(comparison: Comparison, name: str | None = None, *, recording: rr.RecordingStream) -> None:
     name = name or "error"
-    log(comparison.error, name, recording=recording)
+    # WHY under error/ (2026-11-11): a recording often holds the compared trajectory under the same name (target / sim / real and each
+    # one's Comparison); on the trajectory's own path the error would share its plot and its series. error/<field>/<column>/<name> is
+    # its own tab, as traj_compare's Rerun projection keeps /error/...
+    _series(comparison.error, name, recording, prefix="error/")
     rows = ["| metric | rms | p95 abs | max abs | final |", "|---|---|---|---|---|"]
     for metric, stats in comparison.metrics.items():
         values = [getattr(stats, key, None) for key in ("rms", "p95_abs", "max_abs", "final")]

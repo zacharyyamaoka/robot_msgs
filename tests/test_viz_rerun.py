@@ -150,3 +150,18 @@ def test_the_default_dashboard_overlays_names_in_one_plot_per_column():
         ("TimeSeriesView", "/positions/elbow"),  # target and real share it: the overlay
         ("TimeSeriesView", "/positions/shoulder"),
     ]
+
+
+def test_a_comparison_logs_its_error_beside_the_trajectory_it_compares(tmp_path):
+    # WHY (2026-11-11, sim2real's result.show): a run's recording holds target / sim / real AND each one's Comparison under the same
+    # name; the error must sit on its own `error/` field (its own tab), never on the angles' plot under the angles' path
+    from robot_msgs.compare import compare
+
+    target, real = joint_trajectory(), joint_trajectory()
+    path = tmp_path / "c.rrd"
+    stream = viz_rerun.compose(("target", target), ("real", real), ("real", compare(target, real)), into=str(path))
+    stream.flush()
+    stream.disconnect()
+    found = chunks(path)
+    assert {"/positions/elbow/target", "/positions/elbow/real", "/error/positions/elbow/real"} <= set(found)
+    assert "/notes/real" in found
