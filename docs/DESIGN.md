@@ -109,6 +109,7 @@ class JointState(Msg):
 | `robot_msgs.geometry` | `Vector3`, `Point`, `Quaternion`, `Pose`, `Pose2D`, `Transform`, `Twist`, `Wrench`, `Accel`, `Inertia`, `PoseStamped`, `TransformStamped`; batch math in `rotations.py` | geometry_msgs |
 | `robot_msgs.shape` | `SolidPrimitive`, `Mesh`, `Plane`, `MeshResource` — solids and surfaces for any 3-D scene (see *Shapes*); `Material` is not here | shape_msgs (`MeshResource`: URDF `<mesh>`) |
 | `robot_msgs.sensor` | `JointState`, `Image`, `CameraInfo`, `PointCloud`, `Imu` | sensor_msgs |
+| `robot_msgs.control` | `ServoState`, `ServoCommand` — the seam a controller loops across: read a stamped state, send a command that names the state it came from (`latency`) | — (moteus position mode; the "MIT mode" of Damiao/RobStride/CubeMars/Unitree) |
 | `robot_msgs.vision` | `BoundingBox2D`, `BoundingBox3D`, `ObjectHypothesis`, `ObjectHypothesisWithPose`, `Detection2D`, `Detection2DArray`, `Detection3D`, `Detection3DArray` | vision_msgs |
 | `robot_msgs.trajectory` | `Trajectory`, `TrajectoryPoint`, `JointTrajectory`, `JointTrajectoryPoint`, `PoseTrajectory`, `PoseTrajectoryPoint`, `JointLimits`, `concatenate` | trajectory_msgs, nav_msgs/Path |
 | `robot_msgs.compare` | `compare(reference, measured)` → `Comparison` (error trajectory + `ErrorStats` per metric), `align`, `error_stats`; also `traj.compare(other)` — numpy only | control_msgs/JointTrajectoryControllerState (error sign) |
@@ -362,6 +363,10 @@ used to describe like any 3D scene"*, so they live at the bottom of the stack
    application, not here.
 4. **A new standard type** (it exists in a ROS package and crosses a wire between domains) →
    add it here, one file, with a catalog example; the contract tests then cover it.
+   A type ROS keeps inside a process but that crosses *our* seams qualifies too when every
+   vendor already agrees on its shape: `ServoCommand` is the position/velocity/feed-forward/kp/kd
+   command every smart-servo board takes (Zach, 2026-11-11: named `Servo…`, not `Actuator…`, so
+   the type says at a glance what it drives; a pneumatic or suction actuator gets its own type).
 
 ## Storage is the cross-language contract; the API is the views
 

@@ -41,6 +41,9 @@ UNMAPPED = {
     "Aggregate",
     "TimeOffsetEstimate",
     "GoalStats",
+    # robot_msgs.control: ROS has no servo message (ros2_control keeps these inside the process)
+    "ServoState",
+    "ServoCommand",
 }
 
 
@@ -63,7 +66,7 @@ MAPPED = [m for m in EXAMPLES if type(m).__name__ not in UNMAPPED]
 
 def test_catalog_is_split_into_mapped_and_unmapped():
     assert {type(m).__name__ for m in EXAMPLES if type(m).__name__ in UNMAPPED} == UNMAPPED
-    assert len(MAPPED) + 17 == len(EXAMPLES)
+    assert len(MAPPED) + 19 == len(EXAMPLES)
 
 
 @pytest.mark.parametrize("msg", MAPPED, ids=lambda m: type(m).__name__)

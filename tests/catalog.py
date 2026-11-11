@@ -14,6 +14,7 @@ from robot_msgs.compare import (
     estimate_time_offset,
     goal,
 )
+from robot_msgs.control import ServoCommand, ServoState
 from robot_msgs.geometry import (
     Accel,
     Inertia,
@@ -100,6 +101,29 @@ EXAMPLES = [
     PoseStamped(HEADER, POSE),
     TransformStamped(HEADER, "tool0", POSE.as_transform()),
     JointState(name=NAMES, position=[0.1, 0.2, 0.3], velocity=[0.0, 0.1, 0.0], header=HEADER),
+    ServoState(
+        name=NAMES,
+        position=[0.1, 0.2, 0.3],
+        velocity=[0.0, 0.1, 0.0],
+        effort=[0.5, -0.2, 0.0],
+        temperature=[31.0, 30.5, 29.0],
+        voltage=[24.1, 24.0, 24.1],
+        fault=[0, 0, 0],
+        seq=812,
+        header=HEADER,
+    ),
+    ServoCommand(
+        name=NAMES,
+        position=[0.11, 0.21, float("nan")],
+        velocity=[0.1, 0.1, 0.2],
+        feedforward_effort=[0.4, -0.1, 0.0],
+        stiffness=[30.0, 30.0, 5.0],
+        damping=[1.0, 1.0, 0.3],
+        max_effort=[4.0, 4.0, 2.0],
+        state_stamp=HEADER.stamp,
+        state_seq=812,
+        header=HEADER.replace(stamp=HEADER.stamp + 0.0021),
+    ),
     Image.from_array(RNG.integers(0, 255, size=(48, 64, 3), dtype=np.uint8), header=HEADER),
     CAMERA,
     PointCloud(
