@@ -29,7 +29,7 @@ Source = "https://github.com/zacharyyamaoka/robot_msgs"
 [project.optional-dependencies]
 viz = ["matplotlib>=3.8"]
 ros = ["rosbags>=0.10"]
-test = ["pytest>=8", "scipy>=1.11", "matplotlib>=3.8", "rosbags>=0.10"]
+test = ["pytest>=8", "scipy>=1.11,<1.17", "matplotlib>=3.8", "rosbags>=0.10"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/robot_msgs"]
