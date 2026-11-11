@@ -87,7 +87,7 @@ class Site(unittest.TestCase):
     def test_home_has_install_line_and_tour(self):
         text = plain(DIST / "index.html")
         self.assertIn("pip install robot-msgs", text)
-        self.assertIn("PyPI release coming", text)
+        self.assertIn(f"Version {model.robot_msgs.__version__} on PyPI", text)
         code, output = model.tour()
         for line in output.splitlines():
             self.assertIn(line.strip(), text)

@@ -6,9 +6,11 @@ import html
 import re
 
 from highlight import highlight
+import robot_msgs
 from model import FnInfo, TypeInfo, domains_in
 
 GITHUB = "https://github.com/zacharyyamaoka/robot_msgs"
+PYPI = "https://pypi.org/project/robot-msgs/"
 GROUP_TITLES = {
     "constructors": "Constructors",
     "properties": "Properties",
@@ -32,6 +34,11 @@ def inline(text: str) -> str:
     escaped = esc(text)
     escaped = re.sub(r"``([^`]+)``", r"<code>\1</code>", escaped)
     return re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+
+
+def install_note() -> str:
+    # WHY generated from the package: a hand-written "release coming" note outlived 0.1.0 by a day.
+    return f'Version {esc(robot_msgs.__version__)} on <a href="{PYPI}" rel="noopener">PyPI</a>.'
 
 
 def plural(count: int) -> str:
@@ -204,7 +211,7 @@ def home(types: list[TypeInfo], tour_code: str, tour_output: str, **ctx) -> str:
   </div>
   <div class="install">
     {code_block("pip install robot-msgs", "shell", label="install command")}
-    <p class="note">PyPI release coming.</p>
+    <p class="note">{install_note()}</p>
   </div>
 </section>
 
@@ -298,7 +305,7 @@ def docs_page(types: list[TypeInfo], conventions: list[tuple[str, str]], **ctx) 
 {heading(1, "Conventions", "overview")}
 <p class="lead">Everything in robot_msgs follows a few fixed rules, written down so nothing is inferred. The types themselves are documented one by one under <a href="/types/">Types</a>; the full design contract is <a href="{GITHUB}/blob/main/docs/DESIGN.md" rel="noopener">docs/DESIGN.md</a>.</p>
 {code_block("pip install robot-msgs", "shell", label="install command")}
-<p class="note">PyPI release coming.</p>
+<p class="note">{install_note()}</p>
 {heading(2, "Conventions", "conventions")}
 <div class="table-wrap"><table class="kv"><thead><tr><th>Thing</th><th>Convention</th></tr></thead><tbody>{conv_rows}</tbody></table></div>
 {heading(2, "Packages", "packages")}
