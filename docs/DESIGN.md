@@ -54,7 +54,7 @@ traj_compare, sim, drivers) can depend on it, and it depends on nothing but nump
 9. **Methods that return a modified copy are named for the result**: `shifted`, `rotated`,
    `normalized`, `rebased`, `time_shifted`, `time_scaled`, `transformed`, `with_*`. Spatial
    words (`shifted`, `rotated`) move things in space; `time_*` moves them in time.
-10. **Runtime dependency: numpy only.** matplotlib (`[viz]`), rosbags (`[ros]`), scipy (tests,
+10. **Runtime dependencies: numpy and the stdlib-only `dataclass-values`** (`Value`/`Space`, shared with py_dataclass_viewer). matplotlib (`[viz]`), rosbags (`[ros]`), scipy (tests,
    as an independent oracle) are extras. A boundary test enforces this.
 
 ## Conventions

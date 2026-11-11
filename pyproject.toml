@@ -18,9 +18,10 @@ classifiers = [
     "Intended Audience :: Science/Research",
 ]
 requires-python = ">=3.11"
-# WHY numpy and nothing else: every message stores its numbers in the most compact form
-# (contiguous, read-only arrays) so batch views are free. Everything heavier is an extra.
-dependencies = ["numpy>=1.26"]
+# WHY numpy and the stdlib-only dataclass-values: every message stores its numbers in the most compact
+# form (contiguous, read-only arrays) so batch views are free; Value/Space come from dataclass-values,
+# the domain-free layer shared with py_dataclass_viewer (Zach, 2026-11-10). Everything heavier is an extra.
+dependencies = ["numpy>=1.26", "dataclass-values"]
 
 [project.urls]
 Homepage = "https://robotmsgs.com"
@@ -44,3 +45,8 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.uv.sources]
+# WHY a path source: dataclass-values is not on PyPI yet, and robot_msgs cannot be published with this
+# dependency until it is; PyPI builds ignore [tool.uv]. This is the local dev checkout.
+dataclass-values = { path = "/home/bam/dataclass_values", editable = true }
