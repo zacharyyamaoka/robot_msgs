@@ -9,7 +9,21 @@ point, turning a depth image into a cloud: first-class methods, not separate lib
   install, no codegen. ROS 2 messages and bags are an export (`robot_msgs.ros`).
 - **Immutable values over compact numpy storage.** Every message is frozen; its arrays are
   read-only, so slices, rows and columns are free views.
-- **Runtime dependencies: numpy and the stdlib-only `dataclass-values` (`Value`/`Space`).** Plots (`[viz]`) and ROS export (`[ros]`) are extras.
+- **Runtime dependencies: numpy and the stdlib-only `dataclass-values` (`Value`/`Space`).** Plots (`[viz]`), the Rerun viewer (`[rerun]`) and ROS export (`[ros]`) are extras.
+
+## Look at any message: `.show()` and `.plot()`
+
+```python
+traj.show()                       # the Rerun viewer, with a dashboard for this type
+traj.plot().savefig("joints.png") # a matplotlib figure, for reports
+
+from robot_msgs.viz.rerun import show, save
+show(target=planned, real=measured, tool=tool_path)   # one plot per joint, one line per name
+save("pick.rrd", target=planned, real=measured)       # open later with `rerun pick.rrd`
+```
+
+`.show()` needs `pip install 'robot-msgs[rerun]'`; `.plot()` needs `[viz]`. Every message type
+has both; the core never imports either.
 
 ## A trajectory is one entity with many views
 

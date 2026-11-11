@@ -150,6 +150,24 @@ class Msg:
     def from_dict(cls: type[M], data: Mapping[str, Any]) -> M:
         return from_dict(data, cls)
 
+    # WHY methods on the base (Zach, 2026-11-11): "type.show() and a visualisation just shows up".
+    # Both import lazily, so the core stays numpy-only; the work lives in robot_msgs.viz.
+
+    def show(self, name: str | None = None) -> Any:
+        """Open this message in the Rerun viewer (``pip install 'robot-msgs[rerun]'``).
+
+        To overlay several, use ``robot_msgs.viz.rerun.show(target=a, real=b)``.
+        """
+        from robot_msgs.viz import rerun as viz_rerun
+
+        return viz_rerun.show(**{name or type(self).__name__: self})
+
+    def plot(self, **options: Any) -> Any:
+        """This message as a matplotlib figure, for reports and notebooks (``robot-msgs[viz]``)."""
+        from robot_msgs.viz import plot
+
+        return plot(self, **options)
+
 
 # ── equality, hashing, repr ──────────────────────────────────────────────────
 

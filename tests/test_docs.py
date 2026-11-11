@@ -1,4 +1,4 @@
-"""The docs are generated from the code (robotmsgs.com reads this package), so the code must carry them.
+"""robotmsgs.com is generated from this package, so the package must carry the docs.
 
 WHY (Zach, 2026-11-11, "Docs Generated From Code — Prior Art"): a type page with no docstring prints
 "No docstring yet."; this test turns that into a red build instead of a quiet gap on the site.
