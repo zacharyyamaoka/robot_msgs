@@ -2,8 +2,8 @@
   "name": "robotmsgs-website",
   "private": true,
   "scripts": {
-    "build": "env -u VIRTUAL_ENV uv run --isolated --with-editable '/home/bam/robot_msgs[viz,ros]' python build/build.py",
-    "test": "env -u VIRTUAL_ENV uv run --isolated --with-editable '/home/bam/robot_msgs[viz,ros]' python -m unittest discover -s tests -v",
+    "build": "env -u VIRTUAL_ENV uv run --isolated --with-editable '..[viz,ros]' python build/build.py",
+    "test": "env -u VIRTUAL_ENV uv run --isolated --with-editable '..[viz,ros]' python -m unittest discover -s tests -v",
     "serve": "pnpm run build && python3 -m http.server 4492 --bind 127.0.0.1 --directory dist",
     "deploy": "pnpm run build && pnpm run test && wrangler deploy"
   },

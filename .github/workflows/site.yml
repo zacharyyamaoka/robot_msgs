@@ -1,0 +1,43 @@
+# robotmsgs.com is generated from this package (website/build/model.py introspects it).
+# WHY (docs.rs pattern, 2026-11-11): every release rebuilds and deploys the site from the
+# released commit, so the docs cannot lag the code. Pushes and PRs only build and test it.
+name: site
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_run:
+    workflows: [publish]
+    types: [completed]
+  workflow_dispatch:
+jobs:
+  site:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: astral-sh/setup-uv@v6
+      - name: build
+        working-directory: website
+        run: uv run --isolated --python 3.12 --with-editable '..[viz,ros]' python build/build.py
+        env:
+          MPLBACKEND: Agg
+      - name: test
+        working-directory: website
+        run: uv run --isolated --python 3.12 --with-editable '..[viz,ros]' python -m unittest discover -s tests
+        env:
+          MPLBACKEND: Agg
+      - name: deploy (releases and manual runs only)
+        if: github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch'
+        working-directory: website
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN is not set; built and tested, not deployed."
+            exit 0
+          fi
+          npx --yes wrangler@4.151.0 deploy

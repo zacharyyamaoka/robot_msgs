@@ -3,6 +3,8 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "robotmsgs",
+  // Not a secret (Cloudflare docs): lets CI deploy with only CLOUDFLARE_API_TOKEN.
+  "account_id": "c2747ee6a8842e150e38acc3d044adde",
   "compatibility_date": "2026-11-10",
   "assets": {
     "directory": "./dist",

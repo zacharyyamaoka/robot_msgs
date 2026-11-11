@@ -35,6 +35,10 @@ test = ["pytest>=8", "scipy>=1.11", "matplotlib>=3.8", "imageio-ffmpeg>=0.5", "r
 [tool.hatch.build.targets.wheel]
 packages = ["src/robot_msgs"]
 
+[tool.hatch.build.targets.sdist]
+# WHY: the sdist is the Python package; robotmsgs.com's generator and reports stay in git only.
+exclude = ["website", "reports"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
