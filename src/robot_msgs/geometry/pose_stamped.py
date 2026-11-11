@@ -12,6 +12,8 @@ from robot_msgs.std import Header
 
 @dataclass(frozen=True, eq=False, repr=False)
 class PoseStamped(Msg):
+    """A pose with a frame and a time: ROS ``geometry_msgs/PoseStamped``."""
+
     header: Header = field(default_factory=Header)
     pose: Pose = field(default_factory=Pose)
 

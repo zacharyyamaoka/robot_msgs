@@ -34,6 +34,8 @@ from robot_msgs.trajectory.trajectory import (
 
 @dataclass(frozen=True, eq=False, repr=False, kw_only=True)
 class PoseTrajectoryPoint(TrajectoryPoint):
+    """One sample of a `PoseTrajectory`: position (m), orientation (xyzw) and optional twist."""
+
     position: Array | None = None
     orientation: Array | None = None
     linear_velocity: Array | None = None
