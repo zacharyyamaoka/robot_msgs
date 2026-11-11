@@ -33,7 +33,8 @@ from robot_msgs.geometry import (
 from robot_msgs.ros.vision_msgs import definitions as vision_msgs_definitions
 from robot_msgs.sensor import CameraInfo, Image, Imu, JointState, PointCloud
 from robot_msgs.sensor.image import IMAGE_ENCODINGS
-from robot_msgs.std import Header
+from robot_msgs.shape import Mesh, Plane, SolidPrimitive
+from robot_msgs.std import ColorRGBA, Header
 from robot_msgs.trajectory import JointTrajectory, PoseTrajectory
 from robot_msgs.vision import (
     BoundingBox2D,
@@ -603,6 +604,76 @@ def _imu_from_ros(ros: Any) -> Imu:
         linear_acceleration_covariance=_covariance_from_ros(ros.linear_acceleration_covariance),
         header=_header_from_ros(ros.header),
     )
+
+
+# ── shape ────────────────────────────────────────────────────────────────────
+# WHY no MeshResource: shape_msgs has no mesh-by-filename message (visualization_msgs Marker's
+# MESH_RESOURCE also needs a pose, colour and header), so it raises "no standard ROS message".
+
+
+@_to(SolidPrimitive, "shape_msgs/msg/SolidPrimitive")
+def _solid_primitive_to_ros(solid: SolidPrimitive) -> Any:
+    # WHY z = 0: robot_msgs' polygon is xy only, and the ROS prism lives in the xy plane.
+    points = [] if solid.polygon is None else [(x, y, 0.0) for x, y in solid.polygon.tolist()]
+    return _ros("shape_msgs/msg/SolidPrimitive")(
+        type=solid.type,
+        dimensions=_floats(solid.dimensions),
+        polygon=_ros("geometry_msgs/msg/Polygon")(
+            points=[_ros("geometry_msgs/msg/Point32")(x=x, y=y, z=z) for x, y, z in points]
+        ),
+    )
+
+
+@_from("shape_msgs/msg/SolidPrimitive")
+def _solid_primitive_from_ros(ros: Any) -> SolidPrimitive:
+    polygon = [(float(p.x), float(p.y)) for p in ros.polygon.points]
+    return SolidPrimitive(
+        type=int(ros.type), dimensions=_floats(ros.dimensions), polygon=polygon or None
+    )
+
+
+@_to(Mesh, "shape_msgs/msg/Mesh")
+def _mesh_to_ros(mesh: Mesh) -> Any:
+    return _ros("shape_msgs/msg/Mesh")(
+        triangles=[
+            _ros("shape_msgs/msg/MeshTriangle")(vertex_indices=np.array(t, dtype=np.uint32))
+            for t in mesh.triangles.tolist()
+        ],
+        vertices=[
+            _ros("geometry_msgs/msg/Point")(x=x, y=y, z=z) for x, y, z in mesh.vertices.tolist()
+        ],
+    )
+
+
+@_from("shape_msgs/msg/Mesh")
+def _mesh_from_ros(ros: Any) -> Mesh:
+    return Mesh(
+        vertices=np.array([[p.x, p.y, p.z] for p in ros.vertices], dtype=np.float64).reshape(-1, 3),
+        triangles=np.array([list(t.vertex_indices) for t in ros.triangles], dtype=np.int64).reshape(
+            -1, 3
+        ),
+    )
+
+
+@_to(Plane, "shape_msgs/msg/Plane")
+def _plane_to_ros(plane: Plane) -> Any:
+    return _ros("shape_msgs/msg/Plane")(coef=_floats(plane.coef))
+
+
+@_from("shape_msgs/msg/Plane")
+def _plane_from_ros(ros: Any) -> Plane:
+    return Plane(_floats(ros.coef))
+
+
+@_to(ColorRGBA, "std_msgs/msg/ColorRGBA")
+def _color_to_ros(color: ColorRGBA) -> Any:
+    # float32 on the wire: the nearest float32 of each channel, as ROS stores them.
+    return _ros("std_msgs/msg/ColorRGBA")(r=color.r, g=color.g, b=color.b, a=color.a)
+
+
+@_from("std_msgs/msg/ColorRGBA")
+def _color_from_ros(ros: Any) -> ColorRGBA:
+    return ColorRGBA(float(ros.r), float(ros.g), float(ros.b), float(ros.a))
 
 
 # ── trajectory ───────────────────────────────────────────────────────────────

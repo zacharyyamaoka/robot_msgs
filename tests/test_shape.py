@@ -31,22 +31,22 @@ def indicator(solid: SolidPrimitive, points: np.ndarray) -> np.ndarray:
         return (abs(x) <= a / 2) & (abs(y) <= b / 2) & (abs(z) <= c / 2)
     if solid.type == SolidPrimitive.SPHERE:
         return x * x + y * y + z * z <= solid.dimensions[0] ** 2
+    if solid.type == SolidPrimitive.PRISM:  # the L shape: two rectangles
+        in_l = ((0 <= x) & (x <= 2) & (0 <= y) & (y <= 1)) | (
+            (0 <= x) & (x <= 1) & (1 <= y) & (y <= 2)
+        )
+        return in_l & (abs(z) <= solid.dimensions[0] / 2)
     height, radius = solid.dimensions
     if solid.type == SolidPrimitive.CYLINDER:
         return (np.hypot(x, y) <= radius) & (abs(z) <= height / 2)
     if solid.type == SolidPrimitive.CONE:  # base at z = -h/2, apex at z = +h/2
         return (np.hypot(x, y) <= radius * (height / 2 - z) / height) & (abs(z) <= height / 2)
-    if solid.type == SolidPrimitive.PRISM:  # the L shape: two rectangles
-        in_l = ((0 <= x) & (x <= 2) & (0 <= y) & (y <= 1)) | (
-            (0 <= x) & (x <= 1) & (1 <= y) & (y <= 2)
-        )
-        return in_l & (abs(z) <= height / 2)
     raise AssertionError(solid.type)
 
 
 def monte_carlo_inertia(solid, mass, n=1_500_000, seed=11):
     """(centroid, tensor about the centroid) of a uniform solid by sampling its bounding box."""
-    lo, hi = (np.asarray(corner) for corner in solid.bounding_box())
+    lo, hi = (corner.as_array() for corner in solid.bounding_box())
     points = np.random.default_rng(seed).uniform(lo, hi, size=(n, 3))
     inside = points[indicator(solid, points)]
     centroid = inside.mean(axis=0)
@@ -260,8 +260,8 @@ def test_inertia_and_centroid_match_a_monte_carlo_integral(name):
     centroid, tensor = monte_carlo_inertia(solid, mass)
     inertia = solid.inertia(mass)
     scale = float(np.abs(tensor).max())
-    assert np.asarray(solid.centroid()) == pytest.approx(centroid, abs=5e-3)
-    assert np.asarray(inertia.com) == pytest.approx(centroid, abs=5e-3)
+    assert solid.centroid().as_array() == pytest.approx(centroid, abs=5e-3)
+    assert inertia.com.as_array() == pytest.approx(centroid, abs=5e-3)
     assert inertia.to_matrix() == pytest.approx(tensor, abs=0.02 * scale)
 
 
@@ -273,7 +273,7 @@ def test_inertia_matches_the_meshs_own_divergence_theorem_inertia(name):
     inertia = solid.inertia(mass)
     scale = float(np.abs(expected.to_matrix()).max())
     assert inertia.to_matrix() == pytest.approx(expected.to_matrix(), abs=0.01 * scale)
-    assert np.asarray(inertia.com) == pytest.approx(np.asarray(expected.com), abs=2e-3)
+    assert inertia.com.as_array() == pytest.approx(expected.com.as_array(), abs=2e-3)
 
 
 def test_inertia_needs_a_positive_mass():
@@ -299,8 +299,8 @@ def test_bounding_boxes_are_centred_on_the_origin_except_where_the_polygon_is_no
 @pytest.mark.parametrize("name", list(SOLIDS))
 def test_the_mesh_fits_in_the_bounding_box_and_touches_it(name):
     solid = SOLIDS[name]
-    low, high = (np.asarray(corner) for corner in solid.bounding_box())
-    mesh_low, mesh_high = (np.asarray(corner) for corner in solid.to_mesh(64).bounding_box())
+    low, high = (corner.as_array() for corner in solid.bounding_box())
+    mesh_low, mesh_high = (corner.as_array() for corner in solid.to_mesh(64).bounding_box())
     assert np.all(mesh_low >= low - 1e-12) and np.all(mesh_high <= high + 1e-12)
     # every face of the box is touched (the sphere's round equator needs res 64 to get close)
     tolerance = 0.01 * float(np.max(high - low))
@@ -314,7 +314,7 @@ def test_the_mesh_fits_in_the_bounding_box_and_touches_it(name):
 @pytest.mark.parametrize("name", list(SOLIDS))
 def test_contains_agrees_with_the_independent_indicator_on_random_points(name):
     solid = SOLIDS[name]
-    low, high = (np.asarray(corner) for corner in solid.bounding_box())
+    low, high = (corner.as_array() for corner in solid.bounding_box())
     points = np.random.default_rng(5).uniform(low - 0.05, high + 0.05, size=(20_000, 3))
     mine = solid.contains(points)
     expected = indicator(solid, points)
@@ -417,7 +417,7 @@ def test_mesh_volume_does_not_depend_on_where_the_origin_is():
 def test_mesh_centroid_and_inertia_of_the_unit_cube():
     cube = Mesh(vertices=CUBE_VERTICES, triangles=CUBE_FACES)
     inertia = cube.inertia(6.0)
-    assert np.asarray(inertia.com) == pytest.approx([0.5, 0.5, 0.5])
+    assert inertia.com.as_array() == pytest.approx([0.5, 0.5, 0.5])
     assert inertia.to_matrix() == pytest.approx(np.eye(3) * (6.0 / 12 * 2))  # m/12 (a² + b²)
 
 
@@ -445,7 +445,7 @@ def test_mesh_transformed_is_the_rigid_motion_of_every_vertex():
     assert moved.inertia(1.0).to_matrix() == pytest.approx(
         rotation.as_matrix() @ mesh.inertia(1.0).to_matrix() @ rotation.as_matrix().T, abs=1e-12
     )
-    low, high = (np.asarray(corner) for corner in moved.bounding_box())
+    low, high = (corner.as_array() for corner in moved.bounding_box())
     assert low == pytest.approx(expected.min(axis=0)) and high == pytest.approx(
         expected.max(axis=0)
     )

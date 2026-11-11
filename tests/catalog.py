@@ -115,7 +115,6 @@ EXAMPLES = [
     error_stats([0.002, -0.001, 0.003]),
     compare(JOINT_TRAJ, JOINT_TRAJ.replace(positions=JOINT_TRAJ.positions * 1.1)),
     compare(POSE_TRAJ, POSE_TRAJ.shifted(dz=0.002), time_offset_s=0.0),
-    Trajectory(t=[0.0], channels={"x": [1.0]})[0],
     SolidPrimitive.box(0.3, 0.2, 0.5),
     SolidPrimitive.sphere(0.25),
     SolidPrimitive.cylinder(0.6, 0.15),
@@ -124,6 +123,7 @@ EXAMPLES = [
     SolidPrimitive.cone(0.5, 0.2).to_mesh(12),
     Plane.from_point_normal(Point(0.0, 0.0, 0.75), Vector3(0.0, 0.0, 1.0)),
     MeshResource("package://bam_arm/meshes/link1.stl", scale=Vector3(0.001, 0.001, 0.001)),
+    Trajectory(t=[0.0], channels={"x": [1.0]})[0],
 ]
 
 assert isinstance(EXAMPLES[-1], TrajectoryPoint)

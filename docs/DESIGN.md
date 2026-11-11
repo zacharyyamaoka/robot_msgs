@@ -105,14 +105,15 @@ class JointState(Msg):
 
 | Package | Types (one file each) | ROS source |
 |---|---|---|
-| `robot_msgs.std` | `Header` | std_msgs |
+| `robot_msgs.std` | `Header`, `ColorRGBA` | std_msgs |
 | `robot_msgs.geometry` | `Vector3`, `Point`, `Quaternion`, `Pose`, `Pose2D`, `Transform`, `Twist`, `Wrench`, `Accel`, `Inertia`, `PoseStamped`, `TransformStamped`; batch math in `rotations.py` | geometry_msgs |
+| `robot_msgs.shape` | `SolidPrimitive`, `Mesh`, `Plane`, `MeshResource` — solids and surfaces for any 3-D scene (see *Shapes*); `Material` is not here | shape_msgs (`MeshResource`: URDF `<mesh>`) |
 | `robot_msgs.sensor` | `JointState`, `Image`, `CameraInfo`, `PointCloud`, `Imu` | sensor_msgs |
 | `robot_msgs.vision` | `BoundingBox2D`, `BoundingBox3D`, `ObjectHypothesis`, `ObjectHypothesisWithPose`, `Detection2D`, `Detection2DArray`, `Detection3D`, `Detection3DArray` | vision_msgs |
 | `robot_msgs.trajectory` | `Trajectory`, `TrajectoryPoint`, `JointTrajectory`, `JointTrajectoryPoint`, `PoseTrajectory`, `PoseTrajectoryPoint`, `JointLimits`, `concatenate` | trajectory_msgs, nav_msgs/Path |
 | `robot_msgs.compare` | `compare(reference, measured)` → `Comparison` (error trajectory + `ErrorStats` per metric), `align`, `error_stats`; also `traj.compare(other)` — numpy only | control_msgs/JointTrajectoryControllerState (error sign) |
 | `robot_msgs.coverage` | `binned(points, axes, reachable)` → `CoverageResult` (% of reachable cells visited), `occupancy`, `marginal`, `bin_index` (numpy.histogramdd's bins), `signed`, `random_plan`; continuous edges or `("levels", …)` axes. Which axes, edges and reachable cells a device type has is the caller's policy (sim2real), never here | — |
-| `robot_msgs.viz` | `plot(msg)` for every type above (matplotlib, `[viz]` extra) | — |
+| `robot_msgs.viz` | `plot(msg)` for every type above but `MeshResource` (a file reference; matplotlib, `[viz]` extra) | — |
 | `robot_msgs.ros` | `to_ros(msg)` / `from_ros(ros_msg)` / `ros_type()` against ROS 2 Jazzy via rosbags' `typestore()` (vision_msgs 4.1.1 registered); `write_bag` / `read_bag` (mcap or sqlite3) — `[ros]` extra | — |
 
 ## Geometry API (frozen contract — other modules import these names)
@@ -270,6 +271,31 @@ contour error (nearest point on the reference path), latency estimation, relativ
 over windows (evo RPE), tolerances with a pass/fail outcome (`path_tolerance`, `goal_tolerance`),
 accuracy vs repeatability across N runs (ISO 9283). Each is a new metric or a new function over
 `Comparison`s; none changes the shape above.
+
+## Shapes — solids for any 3-D scene
+
+Zach, 2026-11-10: a robot description's solids *"don't just apply to robot descriptions but can be
+used to describe like any 3D scene"*, so they live at the bottom of the stack
+(`robot_msgs` ← `robot_description` ← everything), not in the description.
+
+- **`SolidPrimitive` is ROS-literal**: `type` (`BOX=1 … PRISM=5`), `dimensions` in ROS's index
+  layout (`BOX_X/Y/Z`, `SPHERE_RADIUS`, `CYLINDER_HEIGHT/RADIUS`, `CONE_HEIGHT/RADIUS`,
+  `PRISM_HEIGHT`) and an `(N, 2)` `polygon` for the prism. `box()`, `sphere()`, `cylinder()`,
+  `cone()`, `prism()` build one; `.size`, `.radius`, `.height` read it.
+- **Origin: ROS centres every primitive's bounding box on 0,0,0.** Cylinder and cone lie along z,
+  the cone's base at `z = -h/2` and apex at `+h/2`, so its centroid is at `z = -h/4`. `inertia(m)`
+  is about the centroid and reports that offset as `com` (URDF `<inertial><origin>`).
+- **Standard functions live with the type**: `volume()`, `centroid()`, `inertia(mass)`,
+  `bounding_box()` (min, max `Point`s), `contains(points)` (surface inside), `to_mesh(resolution)`
+  (closed, outward, vertices on the surface, so it converges from below). A pose that places the
+  solid is the owner's, as with `BoundingBox3D.center`.
+- **`Mesh`** is `shape_msgs/Mesh` as two arrays (`vertices (N, 3)`, `triangles (M, 3)` int32), plus
+  the divergence-theorem solid maths (`volume()` signed, `centroid()`, `inertia(mass)`) and
+  `transformed(pose)`. **`Plane`** is ROS's `coef` (a, b, c, d) with a signed `distance`.
+- **`MeshResource(filename, scale)`** is a URDF/visualization_msgs-style file reference. ROS
+  `shape_msgs` has no such type, so it has no ROS conversion; load the file into a `Mesh` to send it.
+- **`Material` stays in `robot_description`**: ROS has no Material message (URDF's name, colour
+  and texture is a description concept). The colour itself is `std.ColorRGBA`.
 
 ## Extending without forking
 

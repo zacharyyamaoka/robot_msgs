@@ -67,9 +67,10 @@ returns `(trajectory, repair)` and writes the same receipt into `header.meta`; n
 
 | Import | Types |
 |---|---|
-| `robot_msgs.std` | `Header` |
+| `robot_msgs.std` | `Header` `ColorRGBA` |
 | `robot_msgs.geometry` | `Vector3` `Point` `Quaternion` `Pose` `Pose2D` `Transform` `Twist` `Wrench` `Accel` `Inertia` `PoseStamped` `TransformStamped` · batch maths in `geometry.rotations` (incl. direct `euler_to_matrix` / `matrix_to_euler`) |
 | `robot_msgs.sensor` | `JointState` `Image` `CameraInfo` `PointCloud` `Imu` |
+| `robot_msgs.shape` | `SolidPrimitive` (box, sphere, cylinder, cone, prism: `volume` `inertia` `bounding_box` `contains` `to_mesh`) `Mesh` `Plane` `MeshResource` (a URDF-style file reference; no ROS message) |
 | `robot_msgs.vision` | `BoundingBox2D` `BoundingBox3D` `ObjectHypothesis` `ObjectHypothesisWithPose` `Detection2D` `Detection2DArray` `Detection3D` `Detection3DArray` |
 | `robot_msgs.trajectory` | `Trajectory` `JointTrajectory` `PoseTrajectory` (+ points) `JointLimits` `concatenate` `TimeRepair` |
 | `robot_msgs.viz` `[viz]` | `plot(msg)` for every type, `animate(*trajectories, path=...)` |
