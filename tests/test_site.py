@@ -84,6 +84,18 @@ class Site(unittest.TestCase):
         self.assertRegex(pose, r'<h3>Uses</h3>.*href="/types/geometry/Point/"')
         self.assertRegex(pose, r'<h3>Used by</h3>.*href="/types/geometry/PoseStamped/"')
 
+    def test_home_words_come_from_the_package(self):
+        # WHY: the hero was hand-written here and went stale ("PyPI release coming", "numpy only").
+        text = plain(DIST / "index.html")
+        words = model.intro()
+        self.assertGreaterEqual(len(words.pillars), 3)
+        self.assertIn(words.tagline.rstrip("."), text)
+        self.assertIn(words.lead.split(":")[0], text)
+        for title, _ in words.pillars:
+            self.assertIn(title.replace("`", ""), text)
+        self.assertIn(f"v{model.robot_msgs.__version__}", text)
+        self.assertNotIn("numpy only", text)
+
     def test_home_has_install_line_and_tour(self):
         text = plain(DIST / "index.html")
         self.assertIn("pip install robot-msgs", text)

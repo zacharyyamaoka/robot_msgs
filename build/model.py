@@ -28,6 +28,7 @@ ROBOT_MSGS_DIR = Path(robot_msgs.__file__).resolve().parents[2]
 CATALOG = ROBOT_MSGS_DIR / "tests" / "catalog.py"
 TOUR = ROBOT_MSGS_DIR / "examples" / "tour.py"
 DESIGN = ROBOT_MSGS_DIR / "docs" / "DESIGN.md"
+README = ROBOT_MSGS_DIR / "README.md"
 
 # WHY this order (Zach): the sidebar reads std, geometry, sensor, vision, trajectory.
 # shape sits beside geometry (solids of a scene); compare comes last (it reads the others).
@@ -385,6 +386,35 @@ def tour() -> tuple[str, str]:
         [sys.executable, str(TOUR)], check=True, capture_output=True, text=True
     )
     return code, result.stdout.rstrip()
+
+
+@dataclass(frozen=True)
+class Intro:
+    """The home page's words, all read from the package (WHY: hand-written copy here went stale)."""
+
+    tagline: str  # pyproject description
+    eyebrow: str  # Python floor · license · version
+    lead: str  # README: the paragraph under the title (Markdown inline)
+    pillars: list[tuple[str, str]]  # README: the first bullet list, "**Title.** body"
+
+
+def intro() -> Intro:
+    from importlib.metadata import metadata
+
+    meta = metadata("robot-msgs")
+    blocks = README.read_text().split("\n\n")
+    lead = " ".join(blocks[1].split())
+    bullets = re.split(r"\n- ", "\n" + blocks[2].strip())[1:]
+    pillars = []
+    for bullet in bullets:
+        text = " ".join(bullet.split())
+        match = re.match(r"\*\*(.+?)\*\*\s*(.*)", text)
+        if match:
+            pillars.append((match.group(1).rstrip("."), match.group(2)))
+    python = (meta.get("Requires-Python") or "").replace(">=", "≥ ")
+    license_name = meta.get("License-Expression") or meta.get("License") or ""
+    eyebrow = " · ".join(part for part in (f"Python {python}".strip(), license_name, f"v{meta['Version']}") if part)
+    return Intro(tagline=meta["Summary"], eyebrow=eyebrow, lead=lead, pillars=pillars)
 
 
 def conventions() -> list[tuple[str, str]]:

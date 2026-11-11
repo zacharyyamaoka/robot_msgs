@@ -7,7 +7,7 @@ import re
 
 from highlight import highlight
 import robot_msgs
-from model import FnInfo, TypeInfo, domains_in
+from model import FnInfo, TypeInfo, domains_in, intro
 
 GITHUB = "https://github.com/zacharyyamaoka/robot_msgs"
 PYPI = "https://pypi.org/project/robot-msgs/"
@@ -33,7 +33,8 @@ def inline(text: str) -> str:
     """Escape text and turn its ``code`` / `code` spans (reST or Markdown) into <code>."""
     escaped = esc(text)
     escaped = re.sub(r"``([^`]+)``", r"<code>\1</code>", escaped)
-    return re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    return re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
 
 
 def install_note() -> str:
@@ -194,6 +195,10 @@ def sidebar_html(
 
 
 def home(types: list[TypeInfo], tour_code: str, tour_output: str, **ctx) -> str:
+    words = intro()
+    pillars = "".join(
+        f'<div class="pillar"><h2>{inline(title)}</h2><p>{inline(body)}</p></div>' for title, body in words.pillars
+    )
     domains = domains_in(types)
     packages = "".join(
         f'<a class="pkg" href="/types/#{d}"><span class="pkg-name">{d}</span>'
@@ -202,9 +207,9 @@ def home(types: list[TypeInfo], tour_code: str, tour_output: str, **ctx) -> str:
     )
     body = f"""<div class="home">
 <section class="hero" aria-labelledby="hero-h">
-  <p class="eyebrow">Python · numpy only · MIT</p>
-  <h1 id="hero-h">robot_msgs <span class="dash">—</span> the standard vocabulary for robot data</h1>
-  <p class="lead">ROS's <code>geometry_msgs</code>, <code>sensor_msgs</code>, <code>trajectory_msgs</code> and <code>vision_msgs</code> as frozen Python dataclasses, <em>with the functions that move between them</em>: offset a pose, interpolate a trajectory, project a point, turn a depth image into a cloud.</p>
+  <p class="eyebrow">{esc(words.eyebrow)}</p>
+  <h1 id="hero-h">robot_msgs <span class="dash">—</span> {esc(words.tagline.rstrip("."))}</h1>
+  <p class="lead">{inline(words.lead)}</p>
   <div class="cta">
     <a class="btn primary" href="/types/">Browse {len(types)} types</a>
     <a class="btn" href="{GITHUB}" rel="noopener">View on GitHub</a>
@@ -216,9 +221,7 @@ def home(types: list[TypeInfo], tour_code: str, tour_output: str, **ctx) -> str:
 </section>
 
 <section class="pillars" aria-label="Principles">
-  <div class="pillar"><h2>ROS's shape, not ROS</h2><p>Same packages and field names, so the ROS docs are our docs. No ROS install, no codegen. ROS 2 messages and bags are an export, not the programming model.</p></div>
-  <div class="pillar"><h2>One entity, many views</h2><p>A trajectory is one value with batch arrays, single points, slices and interpolation, not 500 point messages. Views are free; messages are immutable.</p></div>
-  <div class="pillar"><h2>numpy only</h2><p>One runtime dependency. Plots and ROS export are optional extras that the core never imports.</p></div>
+  {pillars}
 </section>
 
 <section class="tour" aria-labelledby="tour-h">
@@ -236,8 +239,8 @@ def home(types: list[TypeInfo], tour_code: str, tour_output: str, **ctx) -> str:
 </section>
 </div>"""
     return shell(
-        title="robot_msgs — the standard vocabulary for robot data",
-        description="ROS's standard message types as frozen Python dataclasses, with the functions that move between them. numpy only.",
+        title=f"robot_msgs — {words.tagline.rstrip('.')}",
+        description=words.tagline,
         path="/", body=body, section="home", sidebar=False, types=types, **ctx,
     )  # fmt: skip
 
