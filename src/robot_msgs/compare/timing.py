@@ -78,10 +78,10 @@ def estimate_time_offset(
 ) -> TimeOffsetEstimate:
     """How late the measured clock runs, from positions only (joints, or a pose's position).
 
-    1. Coarse: cross-correlate the two runs' velocities (``np.gradient``) on a uniform grid at
+    1. Coarse: normalised cross-correlation of the two runs' velocities (``np.gradient``) on a uniform grid at
        the reference's median step over their overlap, lags limited to ±`max_offset_s`.
     2. Refine: minimise the RMS position error (the error `compare` would report at that offset)
-       over ``[coarse - 2 dt, coarse + 2 dt]`` by golden-section search, to 1e-6 s.
+       over ``[coarse - 3 dt, coarse + 3 dt]`` by golden-section search, to 1e-6 s.
 
     WHY velocities for the coarse step: correlating positions of a slow drift or a ramp has no
     sharp peak; their derivatives do. WHY a refinement at all: the correlation is only as fine as
@@ -121,12 +121,16 @@ def estimate_time_offset(
             first, second = reference_velocity[: count - lag], measured_velocity[lag:]
         else:
             first, second = reference_velocity[-lag:], measured_velocity[: count + lag]
-        scores[slot] = float(np.sum(first * second)) / len(first)
+        # WHY normalised (Pearson-style over the overlap), not divided by the overlap length: a
+        # motion between rests keeps the same sum as the overlap shrinks, so a per-sample mean
+        # rewards the largest lag (a 10 ms delay read as 88 ms before 2026-11-10).
+        energy = float(np.sqrt(np.sum(first * first) * np.sum(second * second)))
+        scores[slot] = float(np.sum(first * second)) / energy if energy > 0.0 else -np.inf
     coarse = float(lags[int(np.argmax(scores))]) * step
     offset = _golden_minimum(
         lambda candidate: _rms_position_error(reference, measured, candidate),
-        coarse - 2.0 * step,
-        coarse + 2.0 * step,
+        coarse - 3.0 * step,
+        coarse + 3.0 * step,
         1e-6,
     )
     return TimeOffsetEstimate(

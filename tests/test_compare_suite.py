@@ -527,3 +527,18 @@ def test_speed_scaling_and_segment_index_ride_along_on_the_error():
     np.testing.assert_array_equal(result.error.channels["time_base/speed_scaling"], scaling)
     np.testing.assert_array_equal(result.error.channels["time_base/segment_index"], segment)
     assert not any("speed_scaling" in name or "segment_index" in name for name in result.metrics)
+
+
+def test_estimate_time_offset_with_rests_at_both_ends():
+    """Regression (2026-11-10): a correlation divided by its overlap length favours large lags when
+    the motion sits between rests (shorter overlap, same sum), which put a 10 ms delay at 88 ms."""
+    t = np.linspace(0.0, 2.4, 1201)
+
+    def rest_swing_rest(time):
+        phase = np.clip((time - 0.2) / 1.6, 0.0, 1.0)
+        return np.column_stack([0.05 * np.sin(np.pi * phase), 0.15 - 0.15 * np.cos(np.pi * phase)])
+
+    reference = joint_traj(t, rest_swing_rest(t))
+    for delay in (0.010, 0.030, -0.020):
+        estimate = estimate_time_offset(reference, joint_traj(t, rest_swing_rest(t - delay)))
+        assert estimate.offset_s == pytest.approx(delay, abs=5e-4)
