@@ -89,3 +89,25 @@ def test_pose_matrix_round_trip():
 def test_zero_quaternion_is_rejected():
     with pytest.raises(ValueError):
         rot.quat_normalize(np.zeros(4))
+
+
+def test_quat_slerp_is_exact_for_small_angles_where_nlerp_was_used():
+    """Regression (2026-11-11): under ~1.8 deg (dot > 0.9995) slerp fell back to a normalised lerp,
+    up to 8e-4 mrad off true slerp, which failed data-ui's trajectory-contract fixture."""
+    from scipy.spatial.transform import Rotation, Slerp
+
+    from robot_msgs.geometry.rotations import quat_slerp
+
+    rng = np.random.default_rng(11)
+    for angle in (1e-9, 1e-6, 1e-4, 1e-3, 0.01, 0.03, 0.5, 3.0):
+        axis = rng.normal(size=3)
+        axis /= np.linalg.norm(axis)
+        start = Rotation.random(random_state=int(angle * 1e6) % 97)
+        end = Rotation.from_rotvec(axis * angle) * start
+        alphas = np.linspace(0.0, 1.0, 7)
+        expected = Slerp([0.0, 1.0], Rotation.concatenate([start, end]))(alphas)
+        ours = quat_slerp(
+            np.broadcast_to(start.as_quat(), (7, 4)), np.broadcast_to(end.as_quat(), (7, 4)), alphas
+        )
+        error = (Rotation.from_quat(ours) * expected.inv()).magnitude()
+        assert np.max(error) < 1e-12, (angle, np.max(error))

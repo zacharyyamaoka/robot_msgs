@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import numpy as np
 
-_NLERP_DOT = 0.9995
 
 
 def _xyzw(q: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -208,12 +207,15 @@ def quat_slerp(q0: np.ndarray, q1: np.ndarray, alpha: np.ndarray) -> np.ndarray:
     dot = np.sum(q0 * q1, axis=-1, keepdims=True)
     q1 = np.where(dot < 0.0, -q1, q1)
     dot = np.abs(dot)
-    theta = np.arccos(np.clip(dot, -1.0, 1.0))
-    sin_theta = np.sin(theta)
-    near = dot > _NLERP_DOT
-    safe = np.where(near, 1.0, sin_theta)
-    w0 = np.where(near, 1.0 - alpha, np.sin((1.0 - alpha) * theta) / safe)
-    w1 = np.where(near, alpha, np.sin(alpha * theta) / safe)
+    # WHY atan2 of the orthogonal part, not arccos(dot) with an nlerp fallback: arccos loses half
+    # its digits near dot = 1, and the old nlerp below ~1.8 deg was up to 8e-4 mrad off true slerp
+    # (it failed data-ui's trajectory-contract fixture, 2026-11-11). sin(theta) = |q1 - dot q0|.
+    sin_theta = np.linalg.norm(q1 - dot * q0, axis=-1, keepdims=True)
+    theta = np.arctan2(sin_theta, dot)
+    tiny = sin_theta < 1e-15
+    safe = np.where(tiny, 1.0, sin_theta)
+    w0 = np.where(tiny, 1.0 - alpha, np.sin((1.0 - alpha) * theta) / safe)
+    w1 = np.where(tiny, alpha, np.sin(alpha * theta) / safe)
     return quat_normalize(w0 * q0 + w1 * q1)
 
 
