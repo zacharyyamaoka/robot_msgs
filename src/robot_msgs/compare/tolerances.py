@@ -17,7 +17,7 @@ from typing import Any, NamedTuple
 import numpy as np
 
 from robot_msgs._core import FrozenDict, Msg, from_dict, set_field
-from robot_msgs.compare._phases import split_phases
+from robot_msgs.compare._phases import in_goal_phase, split_phases
 from robot_msgs.compare.align import match_joints
 from robot_msgs.geometry.rotations import quat_conjugate, quat_multiply, quat_to_rotvec
 from robot_msgs.trajectory import JointTrajectory, PoseTrajectory
@@ -603,7 +603,7 @@ class ToleranceMonitor:
         horizon = self._tolerances.goal_time_tolerance
         if horizon > 0.0 and t > self._end + horizon + self._tolerance:
             return self._judge.finish("expired")
-        phase = "goal" if t >= self._end - self._tolerance else "path"
+        phase = "goal" if in_goal_phase(t, self._end, self._tolerance) else "path"
         return self._judge.step(
             phase, t, t, _row_of(reference_point, self._kind), _row_of(measured_point, self._kind)
         )

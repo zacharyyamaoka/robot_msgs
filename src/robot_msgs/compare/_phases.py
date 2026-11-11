@@ -18,6 +18,13 @@ class Phases(NamedTuple):
     end: float  # the reference's last absolute time
 
 
+def in_goal_phase(tau, end: float, tolerance: float):
+    """The one phase boundary: ``τ >= end`` (inclusive, within `tolerance`). Works on a float
+    (the online `ToleranceMonitor`) and on an array (the offline `check`). WHY one function: the
+    verdict online and offline must never disagree about which phase a sample is in."""
+    return tau >= end - tolerance
+
+
 def split_phases(
     reference: Trajectory,
     measured: Trajectory,
@@ -41,8 +48,8 @@ def split_phases(
     start, end = float(reference_times[0]), float(reference_times[-1])
     tolerance = 1e-9 * max(1.0, float(np.max(np.abs(reference_times))))
     tau = measured.absolute_times - float(time_offset_s)
-    path = (tau >= start - tolerance) & (tau < end - tolerance)
-    goal = tau >= end - tolerance
+    goal = in_goal_phase(tau, end, tolerance)
+    path = (tau >= start - tolerance) & ~goal
     if goal_time_tolerance > 0.0:
         goal &= tau <= end + goal_time_tolerance + tolerance
     return Phases(path=path, goal=goal, tau=tau, end=end)
