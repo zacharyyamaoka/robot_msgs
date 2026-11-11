@@ -438,7 +438,8 @@ def test_mesh_transformed_is_the_rigid_motion_of_every_vertex():
     pose = Pose.from_xyz_rpy(0.5, -1.0, 2.0, 0.3, -0.7, 1.1)
     mesh = SOLIDS["cone"].to_mesh(24)
     moved = mesh.transformed(pose)
-    expected = rotation.apply(mesh.vertices) + [0.5, -1.0, 2.0]
+    # a writeable copy: scipy on Python 3.11 refuses read-only arrays in Rotation.apply
+    expected = rotation.apply(np.array(mesh.vertices)) + [0.5, -1.0, 2.0]
     assert moved.vertices == pytest.approx(expected, abs=1e-12)
     assert np.array_equal(moved.triangles, mesh.triangles)
     assert moved.volume() == pytest.approx(mesh.volume())
