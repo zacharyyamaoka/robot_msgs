@@ -28,6 +28,22 @@ from robot_msgs.viz.trajectory import (
 CURSOR = "#333333"
 
 
+def _use_bundled_ffmpeg() -> bool:
+    """Point matplotlib at imageio-ffmpeg's static binary when no ffmpeg is on PATH.
+
+    WHY: a system ffmpeg is an apt/brew step outside pip; the viz extra bundles one so
+    `.mp4` works from a plain `pip install` (and CI no longer depends on an apt mirror).
+    """
+    try:
+        import imageio_ffmpeg
+    except ImportError:
+        return False
+    import matplotlib
+
+    matplotlib.rcParams["animation.ffmpeg_path"] = imageio_ffmpeg.get_ffmpeg_exe()
+    return FFMpegWriter.isAvailable()
+
+
 @dataclass
 class _Scene:
     """A figure plus the function that moves its cursor, markers and triad to time `t`."""
@@ -246,8 +262,11 @@ def animate(
     path = Path(path)
     suffix = path.suffix.lower()
     if suffix == ".mp4":
-        if not FFMpegWriter.isAvailable():
-            raise RuntimeError("animate(.mp4) needs ffmpeg on PATH; install it or write a .gif")
+        if not FFMpegWriter.isAvailable() and not _use_bundled_ffmpeg():
+            raise RuntimeError(
+                "animate(.mp4) needs ffmpeg: put it on PATH, pip install robot-msgs[viz] "
+                "(bundles one via imageio-ffmpeg), or write a .gif"
+            )
         # WHY pad + yuv420p: libx264 refuses odd sizes, and browsers only play yuv420p.
         writer: Any = FFMpegWriter(
             fps=fps,

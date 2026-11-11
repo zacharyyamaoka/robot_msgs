@@ -14,10 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      # WHY: test_viz writes a real .mp4 through matplotlib's FFMpegWriter; the runner image has no ffmpeg.
-      # WHY timeout: an apt mirror stall hung all three jobs for 20+ min on 2026-11-11.
-      - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
-        timeout-minutes: 5
       - run: uv run --isolated --extra test python -m pytest -q
         env:
           MPLBACKEND: Agg
