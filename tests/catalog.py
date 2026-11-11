@@ -3,7 +3,17 @@ so adding a type without adding it here fails the suite."""
 
 import numpy as np
 
-from robot_msgs.compare import compare, error_stats
+from robot_msgs.compare import (
+    JointTolerance,
+    PoseTolerance,
+    Tolerances,
+    aggregate,
+    check,
+    compare,
+    error_stats,
+    estimate_time_offset,
+    goal,
+)
 from robot_msgs.geometry import (
     Accel,
     Inertia,
@@ -58,6 +68,12 @@ POSE_TRAJ = PoseTrajectory.from_poses(
     child_frame_id="tool0",
     header=Header(frame_id="base_link"),
 ).with_derivatives()
+TOLERANCES = Tolerances(
+    path=(JointTolerance(name="j1", position=0.01), JointTolerance(name="j2", position=0.05)),
+    goal=(JointTolerance(name="j1", position=0.01, velocity=0.05),),
+    goal_time_tolerance=0.5,
+)
+OUTCOME = check(JOINT_TRAJ, JOINT_TRAJ.replace(positions=JOINT_TRAJ.positions * 1.1), TOLERANCES)
 HYPOTHESIS = ObjectHypothesisWithPose(hypothesis=ObjectHypothesis("bottle", 0.91), pose=POSE)
 BOX2D = BoundingBox2D.from_xyxy(10, 20, 110, 220)
 BOX3D = BoundingBox3D(center=POSE, size=Vector3(0.07, 0.07, 0.25))
@@ -111,9 +127,20 @@ EXAMPLES = [
     error_stats([0.002, -0.001, 0.003]),
     compare(JOINT_TRAJ, JOINT_TRAJ.replace(positions=JOINT_TRAJ.positions * 1.1)),
     compare(POSE_TRAJ, POSE_TRAJ.shifted(dz=0.002), time_offset_s=0.0),
+    JointTolerance(name="j1", position=0.01, velocity=0.1),
+    PoseTolerance(position=0.005, rotation=0.02),
+    TOLERANCES,
+    OUTCOME.violations[0],
+    OUTCOME,
+    aggregate(JOINT_TRAJ, [JOINT_TRAJ, JOINT_TRAJ.replace(positions=JOINT_TRAJ.positions + 0.01)]),
+    estimate_time_offset(JOINT_TRAJ, JOINT_TRAJ.replace(positions=JOINT_TRAJ.positions * 1.1)),
+    goal(JOINT_TRAJ, JOINT_TRAJ.replace(positions=JOINT_TRAJ.positions * 1.1), band=0.05)[
+        "positions/j1"
+    ],
     Trajectory(t=[0.0], channels={"x": [1.0]})[0],
 ]
 
+assert OUTCOME.violations, "the catalog's Outcome must carry a Violation to exemplify"
 assert isinstance(EXAMPLES[-1], TrajectoryPoint)
 assert isinstance(JOINT_TRAJ[4], JointTrajectoryPoint) and isinstance(
     POSE_TRAJ[1], PoseTrajectoryPoint
