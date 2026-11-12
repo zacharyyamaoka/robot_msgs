@@ -61,9 +61,6 @@ class _Track:
     setpoint: float = math.nan
     target: float = math.nan
     direction: int = 0
-    lead_time: float = 0.0
-    slow_time: float = 0.0
-    reached_time: float = 0.0
 
 
 @dataclass
@@ -77,6 +74,10 @@ class JointCommandSequenceController:
     time: float = 0.0
     events: list[StepEvent] = field(default_factory=list)
     _tracks: dict[str, _Track] = field(default_factory=dict, repr=False)
+    # WHY one timer per (condition, joint), not per joint (2026-11-12, the five-bar homing bench under
+    # gravity): a step may watch one joint with two conditions of one kind (a tight Reached and a
+    # looser "still at its target" one); a shared timer let the unmet one reset the other every tick.
+    _timers: dict[tuple[int, str], float] = field(default_factory=dict, repr=False)
     _step_started: float = 0.0
     _started: bool = False
 
@@ -157,6 +158,7 @@ class JointCommandSequenceController:
         self._step_started = self.time
         previous = self._tracks
         self._tracks = {}
+        self._timers = {}
         for command in self.step.commands:
             here = positions[command.joint]
             track = _Track(command=command, setpoint=here, target=here)
@@ -215,7 +217,13 @@ class JointCommandSequenceController:
         )
 
     def _done_by(self, positions, velocities, dt: float, elapsed: float) -> str | None:
-        for condition in self.step.done_when:
+        timers = self._timers
+
+        def dwelt(key: tuple[int, str], ok: bool, dwell: float) -> bool:
+            timers[key] = timers.get(key, 0.0) + dt if ok else 0.0
+            return timers[key] + 1e-9 >= dwell
+
+        for index, condition in enumerate(self.step.done_when):
             if isinstance(condition, Elapsed):
                 if elapsed + 1e-9 >= condition.duration:
                     return "Elapsed"
@@ -223,8 +231,7 @@ class JointCommandSequenceController:
                 track = self._tracks[condition.joint]
                 lead = (track.direction or 1) * (track.setpoint - positions[condition.joint])
                 slow = abs(velocities[condition.joint]) < condition.speed
-                track.lead_time = track.lead_time + dt if (lead > condition.lead and slow) else 0.0
-                if track.lead_time + 1e-9 >= condition.dwell:
+                if dwelt((index, condition.joint), lead > condition.lead and slow, condition.dwell):
                     return f"Stall {condition.joint}"
             elif isinstance(condition, Reached):
                 ok = True
@@ -235,17 +242,14 @@ class JointCommandSequenceController:
                         and abs(positions[name] - track.target) <= condition.tolerance
                         and abs(velocities[name]) <= condition.speed
                     )
-                    track.reached_time = track.reached_time + dt if here else 0.0
-                    ok = ok and track.reached_time + 1e-9 >= condition.dwell
+                    ok = dwelt((index, name), here, condition.dwell) and ok
                 if ok:
                     return "Reached"
             elif isinstance(condition, Settled):
                 ok = True
                 for name in condition.joints:
-                    track = self._tracks[name]
                     slow = abs(velocities[name]) <= condition.speed
-                    track.slow_time = track.slow_time + dt if slow else 0.0
-                    ok = ok and track.slow_time + 1e-9 >= condition.dwell
+                    ok = dwelt((index, name), slow, condition.dwell) and ok
                 if ok:
                     return "Settled"
         return None

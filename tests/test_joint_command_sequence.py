@@ -198,6 +198,46 @@ def test_settled_waits_for_the_dwell():
     assert controller.events[0].finished == pytest.approx(0.5 + 0.3, abs=0.03)
 
 
+class SaggingJoint(ToyJoint):
+    """A ToyJoint that rests `sag` past every setpoint (gravity carrying it beyond its target)."""
+
+    def __init__(self, sag, **kwargs):
+        super().__init__(**kwargs)
+        self.sag = sag
+
+    def apply(self, command, defines) -> None:
+        before = self.position
+        super().apply(command, defines)
+        if command.max_effort[0] != 0.0:
+            self.position -= self.sag
+        self.velocity = (self.position - before) / DT
+
+
+def test_two_conditions_of_one_kind_on_one_joint_keep_their_own_timers():
+    # WHY (2026-11-12, the five-bar homing bench under gravity): a tight Reached that is never met must
+    # not reset a looser Reached's dwell on the same joint every tick; each condition keeps its own.
+    sequence = JointCommandSequence(
+        joint_names=("j",),
+        steps=(
+            JointCommandStep(
+                name="lower",
+                commands=(JointCommand.move_by("j", -0.2, speed=0.5, max_effort=8.0),),
+                done_when=(
+                    Reached(joints=("j",), tolerance=0.06),
+                    Reached(joints=("j",), tolerance=0.3, speed=0.02, dwell=0.5),
+                ),
+                timeout=5.0,
+            ),
+        ),
+    )
+    joint = SaggingJoint(sag=0.1, position=0.0)  # rests 0.1 beyond its target: the tight reach never holds
+    controller, _ = run(sequence, joint)
+    assert controller.status == "done"
+    assert controller.events[0].outcome == "Reached"
+    # the setpoint arrives at 0.4 s; the loose reach then needs its 0.5 s dwell (one tick of motion settling)
+    assert controller.events[0].finished == pytest.approx(0.4 + 0.5, abs=0.03)
+
+
 def test_a_hold_after_a_hold_keeps_its_setpoint_instead_of_relatching_the_sag():
     hold = JointCommand.hold("j", max_effort=5.0)
     sequence = JointCommandSequence(
