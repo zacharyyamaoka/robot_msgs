@@ -22,12 +22,12 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: build
         working-directory: website
-        run: uv run --isolated --python 3.12 --with-editable '..[viz,ros]' python build/build.py
+        run: uv run --isolated --python 3.12 --with-editable '..[viz,ros,rerun,viser]' python build/build.py
         env:
           MPLBACKEND: Agg
       - name: test
         working-directory: website
-        run: uv run --isolated --python 3.12 --with-editable '..[viz,ros]' python -m unittest discover -s tests
+        run: uv run --isolated --python 3.12 --with-editable '..[viz,ros,rerun,viser]' python -m unittest discover -s tests
         env:
           MPLBACKEND: Agg
       - name: deploy (releases and manual runs only)

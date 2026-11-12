@@ -30,6 +30,25 @@ def write(path: str, content: str | bytes) -> None:
         target.write_text(content, encoding="utf-8")
 
 
+def viser_viewer() -> str:
+    """Viser's own client page, loading the scene named by ``?scene=`` before it boots.
+
+    WHY one shared page, not `as_html()` per type: the client is ~0.8 MB; embedded per type that
+    is ~50 MB of copies. The client reads ``window.__VISER_EMBED_DATA__`` (viser infra/_infra.py).
+    """
+    import viser
+
+    client = (Path(viser.__file__).parent / "client" / "build" / "index.html").read_text()
+    loader = (
+        "<script>(function(){var q=new URLSearchParams(location.search);var s=q.get('scene');"
+        "if(!s)return;var x=new XMLHttpRequest();x.open('GET',s,false);x.send();"
+        "if(x.status===200){window.__VISER_EMBED_DATA__=x.responseText.trim();}"
+        "window.__VISER_EMBED_CONFIG__={darkMode:q.get('dark')==='1'};})();</script>"
+    )
+    head_end = client.index("</head>")
+    return client[:head_end] + loader + client[head_end:]
+
+
 def main() -> None:
     if DIST.exists():
         shutil.rmtree(DIST)
@@ -47,13 +66,18 @@ def main() -> None:
     write("docs/index.html", pages.docs_page(types, model.conventions(), **ctx))
     write("404.html", pages.not_found(types, **ctx))
     urls = ["/", "/docs/", "/types/"]
+    write("assets/viser/viewer.html", viser_viewer())
     for info in types:
-        plot_file = None
-        if info.plot_png:
-            plot_file = f"/assets/plots/{info.domain}-{info.name}.webp"
-            write(plot_file, info.plot_png)
-        write(f"{info.path}index.html", pages.type_page(info, types, plot_file, **ctx))
+        files: dict[str, str] = {}
+        for view in info.views:
+            if view.data is not None:
+                files[view.name] = f"/assets/viz/{view.name}/{info.domain}-{info.name}{view.suffix}"
+                write(files[view.name], view.data)
+        write(f"{info.path}index.html", pages.type_page(info, types, files, **ctx))
         urls.append(info.path)
+    # WHY CORS on the view files: the Rerun tab embeds Rerun's hosted viewer (app.rerun.io), which
+    # fetches the .rrd from this origin.
+    write("_headers", "/assets/viz/*\n  Access-Control-Allow-Origin: *\n")
 
     write("robots.txt", f"User-agent: *\nAllow: /\nSitemap: {ORIGIN}/sitemap.xml\n")
     entries = "".join(f"<url><loc>{ORIGIN}{u}</loc></url>" for u in urls)

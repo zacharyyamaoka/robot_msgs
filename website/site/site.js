@@ -72,6 +72,54 @@
     if (active && sidebar) sidebar.scrollTop = Math.max(0, active.offsetTop - sidebar.clientHeight / 2);
   }
 
+  // viewer tabs (type pages): roving tabindex, arrow keys, iframes built on first open
+  document.querySelectorAll(".vtabs").forEach(function (box) {
+    var tabs = Array.prototype.slice.call(box.querySelectorAll(".vt"));
+    function load(panel) {
+      var frame = panel.querySelector(".vp-frame");
+      if (!frame || frame.dataset.loaded) return;
+      frame.dataset.loaded = "1";
+      var src = frame.dataset.src;
+      if (frame.dataset.rrd) src += "?url=" + encodeURIComponent(location.origin + frame.dataset.rrd);
+      var iframe = document.createElement("iframe");
+      iframe.src = src;
+      iframe.title = "Interactive viewer";
+      iframe.loading = "lazy";
+      iframe.allow = "fullscreen";
+      iframe.addEventListener("load", function () { frame.classList.add("ready"); });
+      frame.appendChild(iframe);
+    }
+    function select(tab, focus) {
+      tabs.forEach(function (t) {
+        var on = t === tab;
+        t.setAttribute("aria-selected", String(on));
+        t.tabIndex = on ? 0 : -1;
+        document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+      });
+      if (focus) tab.focus();
+      load(document.getElementById(tab.getAttribute("aria-controls")));
+      try { localStorage.setItem("viewer", tab.id); } catch (e) {}
+    }
+    tabs.forEach(function (tab, i) {
+      tab.addEventListener("click", function () { select(tab, false); });
+      tab.addEventListener("keydown", function (event) {
+        var step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+        if (!step) return;
+        event.preventDefault();
+        select(tabs[(i + step + tabs.length) % tabs.length], true);
+      });
+    });
+    // remember the viewer the reader picked last, if this type has a view in it
+    var saved = null;
+    try { saved = localStorage.getItem("viewer"); } catch (e) {}
+    var pick = saved && box.querySelector("#" + saved + ":not([data-empty])");
+    if (pick) select(pick, false);
+    else {
+      var open = box.querySelector('.vt[aria-selected="true"]');
+      if (open) load(document.getElementById(open.getAttribute("aria-controls")));
+    }
+  });
+
   // copy buttons
   document.querySelectorAll(".copy").forEach(function (button) {
     button.addEventListener("click", function () {

@@ -92,7 +92,7 @@ def shell(
     nav_links = "".join(
         f'<a href="{href}"{" aria-current=\"page\"" if section == key else ""}>{label}</a>'
         for label, href, key in nav_items
-    ) + f'<a href="{GITHUB}" rel="noopener">GitHub<span class="ext" aria-hidden="true">↗</span></a>'
+    )
 
     side = sidebar_html(types, current, section, full=sidebar, nav_links=nav_links)
     toc_html = ""
@@ -133,6 +133,9 @@ def shell(
     <a class="brand" href="/"><svg width="20" height="20" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="3" width="26" height="26" rx="6" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M10 21V11l6 5 6-5v10" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>robot_msgs</span></a>
     <nav class="topnav" aria-label="Main">{nav_links}</nav>
     <div class="spacer"></div>
+    <a class="icon-btn gh-btn" href="{GITHUB}" rel="noopener" aria-label="robot_msgs on GitHub" title="GitHub">
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+    </a>
     <button class="icon-btn theme-btn" type="button" aria-label="Toggle light and dark theme">
       <svg class="i-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
       <svg class="i-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
@@ -381,20 +384,76 @@ def related_html(info: TypeInfo, by_key: dict[str, TypeInfo]) -> str:
     return inner or '<p class="muted">No other type refers to it, and it refers to none.</p>'
 
 
-def type_page(info: TypeInfo, types: list[TypeInfo], plot_file: str | None, **ctx) -> str:
+RERUN_APP = "https://app.rerun.io/version/0.40.0/index.html"
+
+
+def visualize_html(info: TypeInfo, files: dict[str, str]) -> str:
+    """One tab per registered viewer: the code that opens it, and the view itself.
+
+    WHY the iframes load on first open, not with the page: Rerun's web viewer is ~30 MB of wasm,
+    and most visits never leave the first tab.
+    """
+    var = info.name[0].lower() + info.name[1:]
+    tabs, panels = [], []
+    # WHY this order for the opening tab: the lightest view that exists (a picture, then Viser's
+    # 0.8 MB client, then Rerun's ~30 MB viewer).
+    order = ["matplotlib", "viser", "rerun"]
+    first = min((v.name for v in info.views if v.name in files),
+                key=lambda n: order.index(n) if n in order else len(order), default=None)  # fmt: skip
+    for view in info.views:
+        file = files.get(view.name)
+        selected = view.name == first
+        tab_id, panel_id = f"vt-{view.name}", f"vp-{view.name}"
+        dims = f'<span class="vt-dims">{esc(view.dims)}</span>'
+        tabs.append(
+            f'<button class="vt" role="tab" id="{tab_id}" aria-controls="{panel_id}" '
+            f'aria-selected="{"true" if selected else "false"}" tabindex="{0 if selected else -1}"'
+            f'{" data-empty" if not file else ""}>{esc(view.title)}{dims}</button>'
+        )
+        code = view.show_code.replace("msg", var)
+        snippet = code_block(
+            f"# pip install 'robot-msgs[{view.extra}]'\n{code}", label=f"{view.title} snippet"
+        )
+        if not file:
+            body = f'<div class="vp-empty"><p>{esc(view.reason)}.</p></div>'
+        elif view.name == "matplotlib":
+            w, h = view.size or (800, 600)
+            body = (f'<figure class="figure"><img src="{file}" alt="{esc(view.title)} plot of an example {esc(info.name)}" '
+                    f'loading="lazy" decoding="async" width="{w}" height="{h}"></figure>')  # fmt: skip
+        elif view.name == "rerun":
+            body = (f'<div class="vp-frame" data-src="{RERUN_APP}" data-rrd="{file}">'
+                    f'<p class="vp-wait">Loading the Rerun web viewer (about 30 MB the first time)…</p></div>'
+                    f'<p class="muted small">The real Rerun 0.40 viewer, hosted by rerun.io, playing '
+                    f'<a href="{file}" download>this .rrd</a>. Drag to orbit, scroll to zoom.</p>')  # fmt: skip
+        elif view.name == "viser":
+            body = (f'<div class="vp-frame" data-src="/assets/viser/viewer.html?scene={file}">'
+                    f'<p class="vp-wait">Loading Viser…</p></div>'
+                    f'<p class="muted small">Viser\'s own client playing this scene\'s recording. '
+                    f'Drag to orbit, scroll to zoom.</p>')  # fmt: skip
+        else:  # a viewer registered later: link the file it saved
+            body = f'<p><a href="{file}" download>Download the {esc(view.title)} file</a>.</p>'
+        panels.append(
+            f'<div class="vp" role="tabpanel" id="{panel_id}" aria-labelledby="{tab_id}"'
+            f'{"" if selected else " hidden"}>{snippet}{body}</div>'
+        )
+    return (
+        f'<section aria-labelledby="visualize">{heading(2, "Visualize", "visualize")}'
+        f'<p class="muted">The stock view of the example below in each viewer robot_msgs knows '
+        f'(<code>robot_msgs.viewers</code>; <code>register()</code> adds one).</p>'
+        f'<div class="vtabs"><div class="vt-list" role="tablist" aria-label="Viewer">{"".join(tabs)}</div>'
+        f'{"".join(panels)}</div></section>'
+    )
+
+
+def type_page(info: TypeInfo, types: list[TypeInfo], files: dict[str, str], **ctx) -> str:
     by_key = {t.key: t for t in types}
     by_name = {t.name: t for t in types}
     toc: list[tuple[str, str, int]] = []
     sections: list[str] = []
 
-    if info.plot_png and plot_file:
-        toc.append(("preview", "Preview", 2))
-        sections.append(
-            f'<section aria-labelledby="preview">{heading(2, "Preview", "preview")}'
-            f'<p class="muted">The figure <code>robot_msgs.viz.plot(example)</code> draws for the example below.</p>'
-            f'<figure class="figure"><img src="{plot_file}" alt="Plot of an example {esc(info.name)}" '
-            f'loading="lazy" decoding="async" width="{info.plot_size[0]}" height="{info.plot_size[1]}"></figure></section>'
-        )
+    if files:
+        toc.append(("visualize", "Visualize", 2))
+        sections.append(visualize_html(info, files))
 
     toc.append(("fields", "Fields", 2))
     rows = []

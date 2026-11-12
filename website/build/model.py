@@ -77,6 +77,22 @@ class FnInfo:
 
 
 @dataclass
+class ViewInfo:
+    """One viewer's view of a type's example, as the site serves it."""
+
+    name: str  # registry key: "matplotlib", "rerun", "viser"
+    title: str
+    dims: str
+    url: str
+    extra: str
+    show_code: str
+    data: bytes | None  # the file the page embeds; None when the viewer has no view
+    suffix: str  # the served file's suffix
+    size: tuple[int, int] | None = None  # images only
+    reason: str = ""  # why there is no view
+
+
+@dataclass
 class TypeInfo:
     key: str  # "geometry/Pose"
     domain: str
@@ -92,6 +108,7 @@ class TypeInfo:
     example_json: str
     plot_png: bytes | None
     plot_size: tuple[int, int] | None
+    views: list[ViewInfo] = field(default_factory=list)
     fields: list[FieldInfo] = field(default_factory=list)
     functions: list[FnInfo] = field(default_factory=list)
     uses: list[str] = field(default_factory=list)  # keys referenced by this type's fields
@@ -298,6 +315,41 @@ def render_plot(example: Any) -> tuple[bytes, tuple[int, int]] | None:
     return out.getvalue(), picture.size
 
 
+def render_views(example: Any, plot: tuple[bytes, tuple[int, int]] | None) -> list[ViewInfo]:
+    """Every registered viewer's view of `example`, through robot_msgs.viewers.
+
+    WHY the registry, not a list here: a viewer added with `robot_msgs.viewers.register()`
+    appears on every type page it supports with no site edit (Zach, 2026-11-11).
+    """
+    import base64
+    import tempfile
+
+    from robot_msgs import viewers
+
+    views = []
+    for viewer in viewers.VIEWERS.values():
+        common = dict(name=viewer.name, title=viewer.title, dims=viewer.dims, url=viewer.url,
+                      extra=viewer.extra, show_code=viewer.show_code)  # fmt: skip
+        if viewer.name == "matplotlib":  # already rendered as WebP for the page
+            views.append(ViewInfo(**common, data=plot[0] if plot else None, suffix=".webp",
+                                  size=plot[1] if plot else None,
+                                  reason="" if plot else "no 2-D plot for this type"))  # fmt: skip
+            continue
+        if not viewer.supports(type(example)):
+            views.append(ViewInfo(**common, data=None, suffix=viewer.suffix,
+                                  reason=f"{viewer.title} is {viewer.dims}; this type has nothing {viewer.dims} to draw"))  # fmt: skip
+            continue
+        with tempfile.TemporaryDirectory() as tmp:
+            path = viewer.save(example, f"{tmp}/view{viewer.suffix}")
+            data = open(path, "rb").read()
+        if viewer.name == "viser":
+            # WHY base64 text: the shared viewer page loads it synchronously before Viser boots.
+            views.append(ViewInfo(**common, data=base64.b64encode(data), suffix=".viser.b64"))
+        else:
+            views.append(ViewInfo(**common, data=data, suffix=viewer.suffix))
+    return views
+
+
 def ros_type_of(example: Any) -> str | None:
     from robot_msgs.ros import ros_type
 
@@ -340,7 +392,7 @@ def collect() -> list[TypeInfo]:
             doc_rest=rest, import_line=f"from robot_msgs.{domain} import {name}",
             ros_type=ros_type_of(example), example=example, example_repr=repr(example),
             example_json=format_json(data), plot_png=plot[0] if plot else None,
-            plot_size=plot[1] if plot else None,
+            plot_size=plot[1] if plot else None, views=render_views(example, plot),
             fields=fields_of(cls), functions=function_infos(cls),
         )  # fmt: skip
 

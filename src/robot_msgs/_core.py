@@ -153,14 +153,15 @@ class Msg:
     # WHY methods on the base (Zach, 2026-11-11): "type.show() and a visualisation just shows up".
     # Both import lazily, so the core stays numpy-only; the work lives in robot_msgs.viz.
 
-    def show(self, name: str | None = None) -> Any:
-        """Open this message in the Rerun viewer (``pip install 'robot-msgs[rerun]'``).
+    def show(self, name: str | None = None, *, viewer: str = "rerun") -> Any:
+        """Open this message in a viewer: ``"rerun"`` (default, 2-D + 3-D), ``"viser"`` (3-D) or
+        ``"matplotlib"``; `robot_msgs.viewers` lists them and how to add one.
 
         To overlay several, use ``robot_msgs.viz.rerun.show(target=a, real=b)``.
         """
-        from robot_msgs.viz import rerun as viz_rerun
+        from robot_msgs import viewers
 
-        return viz_rerun.show(**{name or type(self).__name__: self})
+        return viewers.get(viewer).show(self, name)
 
     def plot(self, **options: Any) -> Any:
         """This message as a matplotlib figure, for reports and notebooks (``robot-msgs[viz]``)."""
