@@ -22,7 +22,9 @@ Entity layout, shared with traj_compare's Rerun projection so the two overlay:
 from __future__ import annotations
 
 import re
+from collections.abc import Collection, Sequence
 from functools import singledispatch
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -267,9 +269,37 @@ def _columns(traj: Trajectory, field_name: str, values: np.ndarray) -> list[str]
     return [str(i) for i in range(width)]
 
 
-def _series(traj: Trajectory, name: str, stream: rr.RecordingStream, prefix: str = "") -> None:
+_ANGULAR_FIELDS = ("positions", "velocities", "accelerations")
+
+
+def _degree_joints(traj: Trajectory, degrees: bool | Collection[str]) -> set[str]:
+    """The joints whose angular columns are shown in degrees.
+
+    robot_msgs carries no joint type (JointLimits holds bounds only), so ``degrees=True`` treats
+    every joint as revolute; pass the revolute joints' names instead when some are prismatic."""
+    if not degrees or not isinstance(traj, JointTrajectory):
+        return set()
+    names = set(traj.joint_names) if degrees is True else {str(name) for name in degrees}
+    unknown = names - set(traj.joint_names)
+    if unknown:
+        raise ValueError(f"degrees names joints this trajectory lacks: {sorted(unknown)}")
+    return names
+
+
+def _series(
+    traj: Trajectory,
+    name: str,
+    stream: rr.RecordingStream,
+    prefix: str = "",
+    *,
+    degrees: bool | Collection[str] = False,
+    color: Any = None,
+    t0: float | None = None,
+) -> None:
     t = np.asarray(traj.t, dtype=np.float64)
-    seconds = t - t[0] if t.size else t
+    start = t0 if t0 is not None else (t[0] if t.size else 0.0)
+    seconds = t - start
+    in_degrees = _degree_joints(traj, degrees)
     arrays: dict[str, np.ndarray] = {}
     for f in sample_fields(type(traj)):
         value = getattr(traj, f.name)
@@ -283,18 +313,36 @@ def _series(traj: Trajectory, name: str, stream: rr.RecordingStream, prefix: str
         flat = values.reshape(len(t), -1).astype(np.float64)
         for column, label in enumerate(_columns(traj, field_name.split("/")[-1], values)):
             path = f"{prefix}{field_name}/{_part(label)}/{_part(name)}"
-            _log(stream, path, rr.SeriesLines(names=name), static=True)
+            scale = 180.0 / np.pi if field_name in _ANGULAR_FIELDS and label in in_degrees else 1.0
+            style = rr.SeriesLines(names=name) if color is None else rr.SeriesLines(names=name, colors=color)
+            _log(stream, path, style, static=True)
             _send(
                 stream,
                 path,
                 indexes=[rr.TimeColumn(TIMELINE, duration=seconds)],
-                columns=rr.Scalars.columns(scalars=flat[:, column]),
+                columns=rr.Scalars.columns(scalars=flat[:, column] * scale),
             )
 
 
 @log.register
-def _(traj: Trajectory, name: str | None = None, *, recording: rr.RecordingStream) -> None:
-    _series(traj, name or type(traj).__name__, recording)
+def _(
+    traj: Trajectory,
+    name: str | None = None,
+    *,
+    recording: rr.RecordingStream,
+    degrees: bool | Collection[str] = False,
+    color: Any = None,
+    prefix: str = "",
+    t0: float | None = None,
+) -> None:
+    """One series per column at ``<prefix><field>/<column>/<name>``.
+
+    ``degrees`` shows joint angles (and their rates) in degrees: True for every joint, or the
+    revolute joints' names; the message itself stays SI. ``color`` colours every series (one colour
+    per name keeps a run recognisable across plots); ``prefix`` roots the series (``"error/"``);
+    ``t0`` is the time shown as zero (default: this trajectory's first sample), so several
+    trajectories on one clock share it."""
+    _series(traj, name or type(traj).__name__, recording, prefix, degrees=degrees, color=color, t0=t0)
 
 
 @log.register
@@ -463,6 +511,97 @@ def _(wrench: Wrench, name: str | None = None, *, recording: rr.RecordingStream)
         wrench.torque,
         recording,
     )
+
+
+# ── on the clock: a shaded band, a video, a robot's links ─────────────────────
+
+
+def band(
+    path: str,
+    t: Any,
+    low: Any,
+    high: Any,
+    *,
+    recording: rr.RecordingStream,
+    color: Any = (120, 120, 120, 70),
+    name: str = "tolerance",
+) -> None:
+    """A shaded band between ``low`` and ``high`` on the ``t`` timeline (``t`` in seconds, as logged).
+
+    WHY Measurements: Rerun 0.40 has no fill-between, but `Measurements` shades value ± one
+    standard deviation, so centre = (low + high) / 2 and variance = ((high - low) / 2)² draw
+    exactly the band. A tolerance plot puts it beside the error series under the same parent."""
+    t = np.asarray(t, dtype=np.float64)
+    low = np.broadcast_to(np.asarray(low, dtype=np.float64), t.shape)
+    high = np.broadcast_to(np.asarray(high, dtype=np.float64), t.shape)
+    _log(recording, path, rr.Measurements.from_fields(colors=[color], names=[name], widths=[0.5]), static=True)
+    _send(
+        recording,
+        path,
+        indexes=[rr.TimeColumn(TIMELINE, duration=t)],
+        columns=rr.Measurements.columns(values=0.5 * (low + high), variances=(0.5 * (high - low)) ** 2),
+    )
+
+
+def video(path: str | Path, name: str, *, recording: rr.RecordingStream, start_s: float = 0.0) -> None:
+    """An MP4 at ``video/<name>`` on the ``t`` timeline: frame k at its own timestamp + ``start_s``.
+
+    ``start_s`` is the timeline time shown at video time 0 (a camera rarely starts recording
+    exactly when the trajectory does)."""
+    asset = rr.AssetVideo(path=str(path))
+    entity = f"video/{_part(name)}"
+    _log(recording, entity, asset, static=True)
+    nanos = asset.read_frame_timestamps_nanos()
+    _send(
+        recording,
+        entity,
+        indexes=[rr.TimeColumn(TIMELINE, duration=nanos / 1e9 + start_s)],
+        columns=rr.VideoFrameReference.columns_nanos(nanos),
+    )
+
+
+def _vertex_normals(vertices: np.ndarray, triangles: np.ndarray) -> np.ndarray:
+    faces = vertices[triangles]
+    face_normals = np.cross(faces[:, 1] - faces[:, 0], faces[:, 2] - faces[:, 0])
+    normals = np.zeros_like(vertices)
+    for corner in range(3):
+        np.add.at(normals, triangles[:, corner], face_normals)
+    return normals / np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-12)
+
+
+def links(
+    parts: Sequence[tuple[str, Mesh, PoseTrajectory]],
+    name: str,
+    *,
+    recording: rr.RecordingStream,
+    color: Any = None,
+    t0: float | None = None,
+) -> None:
+    """A robot as (link name, mesh in the link's frame, the link's pose over time) at ``world/<name>/robot/<link>``.
+
+    WHY these three and not a robot description: robot_msgs depends on nothing, so the caller
+    (robot_description, traj_compare) turns its own model into meshes and pose trajectories.
+    ``color`` is one RGBA for every link, or a list with one per link; ``t0`` as for trajectories."""
+    colors = list(color) if isinstance(color, list) and len(color) == len(parts) else [color] * len(parts)
+    for (link, mesh, poses), link_color in zip(parts, colors, strict=True):
+        entity = f"world/{_part(name)}/robot/{_part(link)}"
+        vertices = np.asarray(mesh.vertices, dtype=np.float64)
+        triangles = np.asarray(mesh.triangles)
+        style = {} if link_color is None else {"albedo_factor": link_color}
+        _log(recording, entity,
+             rr.Mesh3D(vertex_positions=vertices, triangle_indices=triangles,
+                       vertex_normals=_vertex_normals(vertices, triangles), **style),
+             static=True)  # fmt: skip
+        t = np.asarray(poses.t, dtype=np.float64)
+        _send(
+            recording,
+            entity,
+            indexes=[rr.TimeColumn(TIMELINE, duration=t - (t0 if t0 is not None else t[0]))],
+            columns=rr.Transform3D.columns(
+                translation=np.asarray(poses.positions, dtype=np.float64),
+                quaternion=np.asarray(poses.orientations, dtype=np.float64),  # xyzw, as Rerun takes it
+            ),
+        )
 
 
 # ── shapes ───────────────────────────────────────────────────────────────────
