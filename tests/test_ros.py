@@ -26,6 +26,8 @@ UNMAPPED = {
     "JointTrajectoryPoint",
     "PoseTrajectoryPoint",
     "JointLimits",
+    # a joint past one of its bounds: ROS has no message for a limit check's result
+    "JointLimitViolation",
     # robot_msgs.compare results: ROS has no message for a trajectory comparison
     "ErrorStats",
     "Comparison",
@@ -74,7 +76,7 @@ MAPPED = [m for m in EXAMPLES if type(m).__name__ not in UNMAPPED]
 
 def test_catalog_is_split_into_mapped_and_unmapped():
     assert {type(m).__name__ for m in EXAMPLES if type(m).__name__ in UNMAPPED} == UNMAPPED
-    assert len(MAPPED) + 26 == len(EXAMPLES)
+    assert len(MAPPED) + 28 == len(EXAMPLES)
 
 
 @pytest.mark.parametrize("msg", MAPPED, ids=lambda m: type(m).__name__)

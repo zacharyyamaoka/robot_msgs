@@ -111,7 +111,7 @@ class JointState(Msg):
 | `robot_msgs.sensor` | `JointState`, `Image`, `CameraInfo`, `PointCloud`, `Imu` | sensor_msgs |
 | `robot_msgs.control` | `ServoState`, `ServoCommand` — the seam a controller loops across: read a stamped state, send a command that names the state it came from (`latency`) | — (moteus position mode; the "MIT mode" of Damiao/RobStride/CubeMars/Unitree) |
 | `robot_msgs.vision` | `BoundingBox2D`, `BoundingBox3D`, `ObjectHypothesis`, `ObjectHypothesisWithPose`, `Detection2D`, `Detection2DArray`, `Detection3D`, `Detection3DArray` | vision_msgs |
-| `robot_msgs.trajectory` | `Trajectory`, `TrajectoryPoint`, `JointTrajectory`, `JointTrajectoryPoint`, `PoseTrajectory`, `PoseTrajectoryPoint`, `JointLimits`, `concatenate` | trajectory_msgs, nav_msgs/Path |
+| `robot_msgs.trajectory` | `Trajectory`, `TrajectoryPoint`, `JointTrajectory`, `JointTrajectoryPoint`, `PoseTrajectory`, `PoseTrajectoryPoint`, `JointLimits` (with each joint's `position_kind`), `JointLimitViolation` + `joint_limit_violations`, `concatenate` | trajectory_msgs, nav_msgs/Path; URDF `<limit>` |
 | `robot_msgs.compare` | `compare(reference, measured)` → `Comparison` (error trajectory + `ErrorStats` per metric), `align`, `error_stats`; also `traj.compare(other)` — numpy only | control_msgs/JointTrajectoryControllerState (error sign) |
 | `robot_msgs.coverage` | `binned(points, axes, reachable)` → `CoverageResult` (% of reachable cells visited), `occupancy`, `marginal`, `bin_index` (numpy.histogramdd's bins), `signed`, `random_plan`; continuous edges or `("levels", …)` axes. Which axes, edges and reachable cells a device type has is the caller's policy (sim2real), never here | — |
 | `robot_msgs.viz` | `plot(msg)` for every type above but `MeshResource` (a file reference; matplotlib, `[viz]` extra) | — |
@@ -230,6 +230,45 @@ traj.header.meta["time_repair.dropped"]  # the same receipt, inside the trajecto
   silent repair is not allowed. A cleaned recording that does not say so is indistinguishable
   from a clean one; the meta copy means the saved file says so too. Clean input changes nothing
   and stamps nothing.
+
+## Joint limits — physical and software
+
+Zach, 2026-11-11: *"lets intro a new concept into RobotDescription we can have like physical limit or
+software limit. Physical limits actually prevent further rotation. software limits don't."* and *"the
+way to enforce that check is just afterwards to check the position read out and make sure it stayed
+within the limits the entire time. So no need to like 'enforce' it in mujoco"*, and *"the URDF and the
+mujoco limits should be the same"*.
+
+**Decision:** `JointLimits.position_kind`, one entry per joint: `"physical"`, `"software"` or `None`.
+
+- **`physical`** is a hard stop. Nothing gets past it, so a simulator enforces it (MuJoCo: the joint's
+  `range` with `limited="true"`), and a plan that goes through it is impossible.
+- **`software`** is a bound the plan and the controller must keep and the hardware does not enforce
+  (UR's ±360°, a cable wrap). A simulator lets the joint through (`range` kept, `limited="false"`),
+  and the run is judged afterwards by `joint_limit_violations`.
+- **`None`** is "not stated": every limit written before the concept, and the field's default, so no
+  existing value changes. A simulator keeps its own default (MuJoCo enforces a `range`).
+- **One kind per joint, both bounds.** WHY: MuJoCo's `limited` is per joint, and the URDF and the
+  simulator must carry the same two numbers; a per-bound kind could not be lowered without changing
+  one of them. ROS's other model, a hard `<limit>` with a soft `<safety_controller>` range nested
+  inside it, is the known extension for a joint that has both (the bench five-bar's 112.5° tour cap
+  inside its 114.4° stop); no joint described so far needs it.
+- **The evidence stays with the description.** `position_kind` holds the plain word; a description
+  may hand in a `dataclass_values` `StrValue` with its source, and the message keeps `str(kind)`.
+
+**The check:** `joint_limit_violations(trajectory, limits=None, *, quantities=...)` returns one
+`JointLimitViolation` per joint, quantity and side the run goes past: the bound and its kind, the worst
+sample (`value`, `excess`, `t`), the first and last sample past it, and how many there were. Rules:
+
+1. **A sample on the bound is inside; a NaN is never past one.** No buffer: a bound is the number.
+2. **No interpolation.** The record says what was sampled, so a run sampled too coarsely to show an
+   excursion has none; sample finer or check the plan.
+3. **Every kind is checked.** A software bound is only ever checked here; a physical one is past only
+   in a world that does not enforce it (a kinematic plan through a stop) or by a physics engine's
+   penetration into it, and its record says `physical`, so a report can tell "drove into the stop"
+   from "left the software range".
+4. **One rule, two views.** `JointTrajectory.limit_violations()` is the records' text (the sentence it
+   always printed); the two can never disagree.
 
 ## Comparing trajectories — `robot_msgs.compare`
 

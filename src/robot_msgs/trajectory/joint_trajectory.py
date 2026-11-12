@@ -15,6 +15,7 @@ import numpy as np
 from robot_msgs._core import Array, adopt, set_field
 from robot_msgs.sensor import JointState
 from robot_msgs.std import Header
+from robot_msgs.trajectory.joint_limit_violation import joint_limit_violations
 from robot_msgs.trajectory.joint_limits import JointLimits
 from robot_msgs.trajectory.trajectory import (
     Extrapolation,
@@ -167,42 +168,8 @@ class JointTrajectory(Trajectory):
     def limit_violations(self, limits: JointLimits | None = None) -> tuple[str, ...]:
         """Human-readable worst violation per joint and bound; empty when within limits.
 
-        Jerk is checked from finite differences of `accelerations` when both are present.
+        The text of `joint_limit_violations(self, limits)`, whose records carry the numbers and
+        each position bound's kind (one rule, two views). Jerk is checked from finite differences
+        of `accelerations` when both are present.
         """
-        limits = self.limits if limits is None else limits.select(self.joint_names)
-        if limits is None:
-            raise ValueError("no limits given and none attached to this trajectory")
-        jerk = None
-        if limits.max_jerk is not None and self.accelerations is not None and len(self) >= 2:
-            jerk = np.gradient(self.accelerations, self.t, axis=0)
-        checks = [
-            ("position", self.positions, limits.min_position, "below"),
-            ("position", self.positions, limits.max_position, "above"),
-            ("velocity", self.velocities, limits.max_velocity, "magnitude"),
-            ("acceleration", self.accelerations, limits.max_acceleration, "magnitude"),
-            ("jerk", jerk, limits.max_jerk, "magnitude"),
-            ("effort", self.effort, limits.max_effort, "magnitude"),
-        ]
-        problems = []
-        for quantity, values, bound, sense in checks:
-            if values is None or bound is None:
-                continue
-            if sense == "below":
-                excess = bound - values
-            elif sense == "above":
-                excess = values - bound
-            else:
-                excess = np.abs(values) - bound
-            for column, name in enumerate(self.joint_names):
-                worst = int(np.argmax(excess[:, column]))
-                if excess[worst, column] > 0.0:
-                    value = values[worst, column]
-                    limit = bound[column]
-                    relation = "<" if sense == "below" else ">"
-                    shown = abs(value) if sense == "magnitude" else value
-                    label = f"|{quantity}|" if sense == "magnitude" else quantity
-                    problems.append(
-                        f"{name}: {label} reaches {shown:.4g} {relation} {limit:.4g} "
-                        f"at t={self.t[worst]:.4g} s"
-                    )
-        return tuple(problems)
+        return tuple(str(violation) for violation in joint_limit_violations(self, limits))

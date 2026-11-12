@@ -49,6 +49,7 @@ from robot_msgs.trajectory import (
     PoseTrajectoryPoint,
     Trajectory,
     TrajectoryPoint,
+    joint_limit_violations,
 )
 from robot_msgs.vision import (
     BoundingBox2D,
@@ -74,6 +75,14 @@ JOINT_TRAJ = JointTrajectory(
     channels={"kp": np.full((11, 3), 40.0), "mode": np.arange(11) % 3},
     header=Header(stamp=12.0, frame_id="base_link"),
 )
+# A physical stop, a software bound and an unstated one, and what JOINT_TRAJ's run does to them.
+KIND_LIMITS = JointLimits(
+    joint_names=NAMES,
+    min_position=[-1.0, -2.0, -np.inf],
+    max_position=[1.0, 2.0, np.inf],
+    position_kind=("physical", "software", None),
+)
+LIMIT_VIOLATIONS = joint_limit_violations(JOINT_TRAJ, KIND_LIMITS, quantities=("position",))
 POSE_TRAJ = PoseTrajectory.from_poses(
     [0.0, 0.5, 1.0],
     [POSE, POSE @ Pose.from_xyz_rpy(0.1, 0, 0, 0, 0, 0.2), POSE],
@@ -206,6 +215,8 @@ EXAMPLES = [
     Trajectory(t=[0.0, 0.1, 0.2], channels={"temperature": [20.0, 20.5, 21.0]}),
     JOINT_TRAJ[4],
     JOINT_TRAJ.limits,
+    KIND_LIMITS,
+    LIMIT_VIOLATIONS[0],
     JOINT_TRAJ,
     POSE_TRAJ[1],
     POSE_TRAJ,
@@ -234,6 +245,7 @@ EXAMPLES = [
 ]
 
 assert OUTCOME.violations, "the catalog's Outcome must carry a Violation to exemplify"
+assert LIMIT_VIOLATIONS, "the catalog's run must leave KIND_LIMITS somewhere to exemplify"
 assert isinstance(EXAMPLES[-1], TrajectoryPoint)
 assert isinstance(JOINT_TRAJ[4], JointTrajectoryPoint) and isinstance(
     POSE_TRAJ[1], PoseTrajectoryPoint
