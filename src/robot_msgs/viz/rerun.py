@@ -81,6 +81,11 @@ def _part(name: object) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(name)) or "_"
 
 
+def path_part(name: object) -> str:
+    """The entity-path segment `log` writes for ``name`` (a joint, a run), for building views on it."""
+    return _part(name)
+
+
 # Every entity path written into each live stream, so `_blueprint` can lay out what was logged.
 _PATHS: dict[int, list[str]] = {}
 
@@ -295,6 +300,7 @@ def _series(
     degrees: bool | Collection[str] = False,
     color: Any = None,
     t0: float | None = None,
+    label: str | None = None,
 ) -> None:
     t = np.asarray(traj.t, dtype=np.float64)
     start = t0 if t0 is not None else (t[0] if t.size else 0.0)
@@ -311,10 +317,11 @@ def _series(
         if values.dtype.kind not in "fiub" or values.shape[:1] != t.shape:
             continue
         flat = values.reshape(len(t), -1).astype(np.float64)
-        for column, label in enumerate(_columns(traj, field_name.split("/")[-1], values)):
-            path = f"{prefix}{field_name}/{_part(label)}/{_part(name)}"
-            scale = 180.0 / np.pi if field_name in _ANGULAR_FIELDS and label in in_degrees else 1.0
-            style = rr.SeriesLines(names=name) if color is None else rr.SeriesLines(names=name, colors=color)
+        for column, column_name in enumerate(_columns(traj, field_name.split("/")[-1], values)):
+            path = f"{prefix}{field_name}/{_part(column_name)}/{_part(name)}"
+            scale = 180.0 / np.pi if field_name in _ANGULAR_FIELDS and column_name in in_degrees else 1.0
+            legend = label or name
+            style = rr.SeriesLines(names=legend) if color is None else rr.SeriesLines(names=legend, colors=color)
             _log(stream, path, style, static=True)
             _send(
                 stream,
@@ -334,6 +341,7 @@ def _(
     color: Any = None,
     prefix: str = "",
     t0: float | None = None,
+    label: str | None = None,
 ) -> None:
     """One series per column at ``<prefix><field>/<column>/<name>``.
 
@@ -341,8 +349,9 @@ def _(
     revolute joints' names; the message itself stays SI. ``color`` colours every series (one colour
     per name keeps a run recognisable across plots); ``prefix`` roots the series (``"error/"``);
     ``t0`` is the time shown as zero (default: this trajectory's first sample), so several
-    trajectories on one clock share it."""
-    _series(traj, name or type(traj).__name__, recording, prefix, degrees=degrees, color=color, t0=t0)
+    trajectories on one clock share it; ``label`` is the legend text (default: ``name``), so a path can
+    stay short (``real_1``) while the legend reads ``Real #1``."""
+    _series(traj, name or type(traj).__name__, recording, prefix, degrees=degrees, color=color, t0=t0, label=label)
 
 
 @log.register

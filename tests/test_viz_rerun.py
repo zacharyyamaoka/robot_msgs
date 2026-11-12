@@ -284,3 +284,20 @@ def test_links_put_each_mesh_on_its_own_moving_frame(tmp_path):
         entity = f"/world/real/robot/{link}"
         assert entity in found
         assert "Mesh3D:vertex_positions" in found[entity][1] and "Transform3D:translation" in found[entity][1]
+
+
+def test_label_is_the_legend_and_path_part_matches_the_path(tmp_path):
+    from rerun.chunk import RrdReader
+
+    path = tmp_path / "label.rrd"
+    stream = _stream(path)
+    viz_rerun.log(joint_trajectory(), "real 1", recording=stream, label="Real #1 (stand-in)")
+    _close(stream)
+    entity = f"/positions/shoulder/{viz_rerun.path_part('real 1')}"
+    names = []
+    for chunk in RrdReader(path).stream():
+        if chunk.entity_path == entity:
+            batch = chunk.to_record_batch()
+            if "SeriesLines:names" in batch.schema.names:
+                names += batch.column(batch.schema.names.index("SeriesLines:names")).to_pylist()
+    assert names == [["Real #1 (stand-in)"]]
