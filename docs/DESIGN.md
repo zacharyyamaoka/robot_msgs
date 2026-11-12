@@ -110,6 +110,7 @@ class JointState(Msg):
 | `robot_msgs.shape` | `SolidPrimitive`, `Mesh`, `Plane`, `MeshResource` — solids and surfaces for any 3-D scene (see *Shapes*); `Material` is not here | shape_msgs (`MeshResource`: URDF `<mesh>`) |
 | `robot_msgs.sensor` | `JointState`, `Image`, `CameraInfo`, `PointCloud`, `Imu` | sensor_msgs |
 | `robot_msgs.control` | `ServoState`, `ServoCommand` — the seam a controller loops across: read a stamped state, send a command that names the state it came from (`latency`) | — (moteus position mode; the "MIT mode" of Damiao/RobStride/CubeMars/Unitree) |
+| `robot_msgs.manipulation` | `GraspPose`, `Waypoint` (+ `WaypointLabel`), `WaypointAction`, `CartesianLimits` — what a grasp detector hands the trajectory generator, and the request the generator takes in (see *Manipulation*) | moveit_msgs (`Grasp`, `MotionPlanRequest`) |
 | `robot_msgs.vision` | `BoundingBox2D`, `BoundingBox3D`, `ObjectHypothesis`, `ObjectHypothesisWithPose`, `Detection2D`, `Detection2DArray`, `Detection3D`, `Detection3DArray` | vision_msgs |
 | `robot_msgs.trajectory` | `Trajectory`, `TrajectoryPoint`, `JointTrajectory`, `JointTrajectoryPoint`, `PoseTrajectory`, `PoseTrajectoryPoint`, `JointLimits` (with each joint's `position_kind`), `JointLimitViolation` + `joint_limit_violations`, `concatenate` | trajectory_msgs, nav_msgs/Path; URDF `<limit>` |
 | `robot_msgs.compare` | `compare(reference, measured)` → `Comparison` (error trajectory + `ErrorStats` per metric), `align`, `error_stats`; also `traj.compare(other)` — numpy only | control_msgs/JointTrajectoryControllerState (error sign) |
@@ -383,6 +384,37 @@ used to describe like any 3D scene"*, so they live at the bottom of the stack
 - **`Material` stays in `robot_description`**: ROS has no Material message (URDF's name, colour
   and texture is a description concept). The colour itself is `std.ColorRGBA`.
 
+## Manipulation — grasps in, waypoint requests to the generator
+
+Decided 2026-11-11 (Zach: "The input to the trajectory gen pipeline should be a WaypointTrajectory
+or WaypointAction ... The grasping networks can output just a Grasp Pose ... this should be a msg
+in robot_msgs"). Prior art: his bam_msgs `WaypointAction` and bam_traj_gen's working copy.
+
+- **Two levels, one boundary each.** A detector that only knows where to grip emits a `GraspPose`
+  (tool pose, close `width`, optional `pre_grasp_width` and `score`, frame in `header`). A pick
+  recipe (bam_traj_gen `make_pick_and_place`), or a detector that wants its own approach,
+  emits a `WaypointAction`. The generator takes only `WaypointAction` and returns a
+  `JointTrajectory`.
+- **One frame for every waypoint.** `WaypointAction.header.frame_id`, once; a waypoint holds a
+  bare `Pose`, so a mixed-frame plan cannot be written (Zach's v3 note: "all points should be for
+  the same frame ID no?"). `start_state` is a `JointState`, after MoveIt's MotionPlanRequest:
+  you always plan from the current state.
+- **Names are free text; labels are a closed set.** `Waypoint.name` is any string, unique in its
+  action. `Waypoint.label` is a `WaypointLabel` (`start`, `home`, `approach`, `pre_grasp`,
+  `grasp`, `close`, `lift`, `carry`, `pre_place`, `place`, `release`, `retreat`, `ready`), the
+  word tools key on: a cycle ends at `ready`, and a moving target is caught at `close` unless
+  `sync_target` names another waypoint. A `Literal` of strings, not an `enum.Enum`, so it
+  serialises as itself and reads in JSON. Today's pick-and-place names map one to one (table in
+  `waypoint.py`).
+- **Intent only, never generated data.** A waypoint carries what its author decides: gripper
+  width and effort cap, duration, dwell, blend radius, interpolation density, the moving
+  target's velocity. IK solutions, blend bookkeeping (`start_blend_point`, offsets) and per-
+  waypoint joint angles are the generator's working state and stay in bam_traj_gen; so do
+  `call_function` hooks and Cartesian impedance (an executor setting, no producer yet).
+- **Limits are the action's.** `cartesian_limits` (`CartesianLimits`, bam_traj_gen's defaults),
+  `arm_limits` and `hand_limits` (`trajectory.JointLimits`, checked against `arm_joints` /
+  `hand_joints`).
+
 ## Extending without forking
 
 1. **Extra per-sample data → `channels`.** Gains, feed-forward torque, controller mode,
@@ -399,7 +431,9 @@ used to describe like any 3D scene"*, so they live at the bottom of the stack
    ```
 3. **Business types → your own dataclasses that hold robot_msgs values** (composition). A
    `GraspCandidate(target: Detection3D, approach: Pose, quality: float)` lives in your
-   application, not here.
+   application, not here. The exception is `GraspPose` (*Manipulation*): it crosses the
+   grasp-detector → trajectory-generator seam, and every detector (Contact-GraspNet, GraspNet,
+   GPD, a camera baseline) already emits the same pose + width + score.
 4. **A new standard type** (it exists in a ROS package and crosses a wire between domains) →
    add it here, one file, with a catalog example; the contract tests then cover it.
    A type ROS keeps inside a process but that crosses *our* seams qualifies too when every

@@ -6,6 +6,7 @@ Import types from their domain, like ROS packages::
     from robot_msgs.sensor import JointState, Image
     from robot_msgs.trajectory import JointTrajectory
     from robot_msgs.control import ServoState, ServoCommand
+    from robot_msgs.manipulation import GraspPose, WaypointAction
 """
 
 from robot_msgs import (
@@ -13,6 +14,7 @@ from robot_msgs import (
     control,
     coverage,
     geometry,
+    manipulation,
     sensor,
     shape,
     space,
@@ -32,6 +34,7 @@ __all__ = [
     "allclose",
     "from_dict",
     "geometry",
+    "manipulation",
     "load_npz",
     "message_types",
     "save_npz",

@@ -1,6 +1,8 @@
 """One representative instance of every message type. The contract tests require full coverage,
 so adding a type without adding it here fails the suite."""
 
+import math
+
 import numpy as np
 
 from robot_msgs.compare import (
@@ -38,6 +40,7 @@ from robot_msgs.geometry import (
     Vector3,
     Wrench,
 )
+from robot_msgs.manipulation import CartesianLimits, GraspPose, Waypoint, WaypointAction
 from robot_msgs.sensor import CameraInfo, Image, Imu, JointState, PointCloud
 from robot_msgs.shape import MeshResource, Plane, SolidPrimitive
 from robot_msgs.std import ColorRGBA, Header
@@ -187,6 +190,68 @@ EXAMPLES = [
                 ),
                 done_when=(Reached(joints=("j2",), tolerance=0.01),),
                 timeout=20.0,
+            ),
+        ),
+    ),
+    GraspPose(
+        pose=Pose.from_xyz_rpy(0.42, -0.05, 0.03, math.pi, 0.0, 0.3),
+        width=0.012,
+        pre_grasp_width=0.06,
+        score=0.87,
+        object_id="bottle",
+        header=HEADER.replace(frame_id="world"),
+    ),
+    CartesianLimits(max_linear_velocity=0.5, max_angular_jerk=math.inf),
+    Waypoint(
+        name="closed_grasp",
+        label="close",
+        pose=Pose.from_xyz_rpy(0.42, -0.05, 0.03, math.pi, 0.0, 0.3),
+        gripper_width=0.012,
+        gripper_max_effort=20.0,
+        dwell=0.2,
+        target_velocity=Vector3(0.1, 0.0, 0.0),
+    ),
+    WaypointAction(
+        tool_frame="tcp_world",
+        header=HEADER.replace(frame_id="world"),
+        start_state=JointState(
+            name=("joint_1", "joint_2", "gripper_joint"),
+            position=[0.0, -0.5, 0.03],
+            velocity=[0, 0, 0],
+        ),
+        arm_joints=("joint_1", "joint_2"),
+        hand_joints=("gripper_joint",),
+        cartesian_limits=CartesianLimits(),
+        arm_limits=JointLimits(joint_names=("joint_1", "joint_2"), max_velocity=[2.0, 2.0]),
+        sync_target="closed_grasp",
+        waypoints=(
+            Waypoint(
+                name="start", label="start", pose=Pose.from_xyz_rpy(0.3, 0.0, 0.3, math.pi, 0, 0)
+            ),
+            Waypoint(
+                name="pre_grasp",
+                label="pre_grasp",
+                pose=Pose.from_xyz_rpy(0.42, -0.05, 0.10, math.pi, 0.0, 0.3),
+                gripper_width=0.06,
+                blend_radius=0.02,
+                blend_points=4,
+                target_velocity=Vector3(0.1, 0.0, 0.0),
+            ),
+            Waypoint(
+                name="closed_grasp",
+                label="close",
+                pose=Pose.from_xyz_rpy(0.42, -0.05, 0.03, math.pi, 0.0, 0.3),
+                gripper_width=0.012,
+                interpolation_points=3,
+                duration=0.8,
+                target_velocity=Vector3(0.1, 0.0, 0.0),
+            ),
+            Waypoint(
+                name="lift",
+                label="lift",
+                pose=Pose.from_xyz_rpy(0.42, -0.05, 0.15, math.pi, 0.0, 0.3),
+                target_velocity=Vector3(0.1, 0.0, 0.0),
+                sync_at_target_time=True,
             ),
         ),
     ),

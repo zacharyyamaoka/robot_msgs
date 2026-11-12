@@ -53,6 +53,7 @@ from robot_msgs.geometry import (
     Vector3,
     Wrench,
 )
+from robot_msgs.manipulation import GraspPose, Waypoint, WaypointAction
 from robot_msgs.sensor import CameraInfo, Image, JointState, PointCloud
 from robot_msgs.shape import Mesh, SolidPrimitive
 from robot_msgs.trajectory import JointTrajectory, PoseTrajectory, Trajectory
@@ -798,6 +799,45 @@ def _(array: Detection2DArray, name: str | None = None, *, recording: rr.Recordi
         f"image/{_part(name or 'Detection2DArray')}",
         recording,
     )
+
+
+@log.register
+def _(grasp: GraspPose, name: str | None = None, *, recording: rr.RecordingStream) -> None:
+    base = f"world/{_part(name or 'GraspPose')}"
+    p = grasp.pose.position
+    _frame(base, [p.x, p.y, p.z], _xyzw(grasp.pose.orientation), recording)
+    text = f"{grasp.object_id or 'grasp'} w={grasp.width * 1000:.0f} mm"
+    if grasp.score is not None:
+        text += f" score={grasp.score:.2f}"
+    _log(recording, f"{base}/label", rr.Points3D([[0.0, 0.0, 0.0]], labels=[text]), static=True)
+
+
+@log.register
+def _(waypoint: Waypoint, name: str | None = None, *, recording: rr.RecordingStream) -> None:
+    p = waypoint.pose.position
+    _frame(
+        f"world/{_part(name or waypoint.name)}",
+        [p.x, p.y, p.z],
+        _xyzw(waypoint.pose.orientation),
+        recording,
+    )
+
+
+@log.register
+def _(action: WaypointAction, name: str | None = None, *, recording: rr.RecordingStream) -> None:
+    # WHY a path plus one labelled frame per waypoint: a request has no timing yet (the generator
+    # adds it), so it is a static picture of where the tool is asked to go, in order.
+    base = f"world/{_part(name or 'WaypointAction')}"
+    points = [[w.pose.position.x, w.pose.position.y, w.pose.position.z] for w in action.waypoints]
+    _log(recording, f"{base}/path", rr.LineStrips3D([points]), static=True)
+    labels = [
+        f"{i} {w.name}" + (f" [{w.label}]" if w.label and w.label != w.name else "")
+        for i, w in enumerate(action.waypoints)
+    ]
+    _log(recording, f"{base}/points", rr.Points3D(points, labels=labels), static=True)
+    for w in action.waypoints:
+        p = w.pose.position
+        _frame(f"{base}/{_part(w.name)}", [p.x, p.y, p.z], _xyzw(w.pose.orientation), recording)
 
 
 __all__ = ["APPLICATION_ID", "RERUN_SDK_VERSION", "TIMELINE", "log", "recording", "save", "show"]

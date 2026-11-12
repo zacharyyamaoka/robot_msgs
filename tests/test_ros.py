@@ -54,6 +54,11 @@ UNMAPPED = {
     "Stall",
     "JointCommandStep",
     "JointCommandSequence",
+    # manipulation: moveit_msgs (Grasp, MotionPlanRequest) is not in the Jazzy typestore
+    "GraspPose",
+    "CartesianLimits",
+    "Waypoint",
+    "WaypointAction",
 }
 
 
@@ -76,7 +81,7 @@ MAPPED = [m for m in EXAMPLES if type(m).__name__ not in UNMAPPED]
 
 def test_catalog_is_split_into_mapped_and_unmapped():
     assert {type(m).__name__ for m in EXAMPLES if type(m).__name__ in UNMAPPED} == UNMAPPED
-    assert len(MAPPED) + 28 == len(EXAMPLES)
+    assert len(MAPPED) + 32 == len(EXAMPLES)
 
 
 @pytest.mark.parametrize("msg", MAPPED, ids=lambda m: type(m).__name__)
