@@ -25,6 +25,7 @@ from robot_msgs.control import (
     ServoCommand,
     ServoState,
     Settled,
+    EffortStall,
     Stall,
 )
 from robot_msgs.geometry import (
@@ -151,6 +152,7 @@ EXAMPLES = [
     Settled(joints=("j2", "c1"), speed=0.01, dwell=0.5),
     Reached(joints=("j2",), tolerance=0.01),
     Stall(joint="c1", lead=0.08),
+    EffortStall(joint="j1", effort=9.0),
     JointCommandStep(
         name="define",
         commands=(JointCommand.hold("j2", max_effort=10.0), JointCommand.limp("c1")),

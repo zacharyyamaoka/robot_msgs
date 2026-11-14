@@ -23,6 +23,7 @@ from robot_msgs.control.joint_command import (
     JointCommandStep,
     Reached,
     Settled,
+    EffortStall,
     Stall,
 )
 from robot_msgs.control.sequence_controller import (
@@ -44,6 +45,7 @@ __all__ = [
     "ServoCommand",
     "ServoState",
     "Settled",
+    "EffortStall",
     "Stall",
     "StepEvent",
 ]

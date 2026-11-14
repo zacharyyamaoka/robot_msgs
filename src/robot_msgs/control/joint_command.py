@@ -211,7 +211,32 @@ class Stall(Msg):
         return (self.joint,)
 
 
-DoneWhen = Elapsed | Reached | Settled | Stall
+# WHY an effort threshold beside the lead rule (the full arm's J1, 2026-11-14): a seek against gravity whose
+# feed-forward is off, or whose cap sits under its load plus friction, stops short where its drive saturates on
+# gravity - and a lead rule reads that as the stop (the rack recorded one at -88 deg, 2 deg short, at 7 N.m with
+# no feed-forward). Pressing on a stop is the one place the drive's effort climbs past the load plus a margin while
+# the joint stands still; a cap under `effort` then never defines a stop - the step times out instead.
+@dataclass(frozen=True, eq=False, repr=False, kw_only=True)
+class EffortStall(Msg):
+    """Done when `joint` moves slower than `speed` while its measured effort pushes the way its setpoint runs
+    with more than `effort` (N·m or N), for `dwell` seconds: it is pressing something. Size `effort` above the
+    largest load the seek carries plus a margin, and under its cap. A state without effort never satisfies it."""
+
+    joint: str
+    effort: float
+    speed: float = 0.01
+    dwell: float = 0.2
+
+    def __post_init__(self) -> None:
+        set_field(self, "joint", str(self.joint))
+        for name in ("effort", "speed", "dwell"):
+            set_field(self, name, _positive("EffortStall", name, getattr(self, name)))
+
+    def watched(self) -> tuple[str, ...]:
+        return (self.joint,)
+
+
+DoneWhen = Elapsed | Reached | Settled | Stall | EffortStall
 """A step's completion condition."""
 
 

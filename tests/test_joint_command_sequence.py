@@ -313,3 +313,83 @@ def test_a_sequence_round_trips_through_json_with_its_mixed_conditions():
     again = JointCommandSequence.from_dict(json.loads(json.dumps(sequence.to_dict())))
     assert again == sequence
     assert isinstance(again.steps[1].done_when[0], Stall)
+
+
+# ── EffortStall: a stop is where the drive pushes past its load, not where it stops moving ────────
+
+
+class GravityJoint(ToyJoint):
+    """A ToyJoint under a load rising toward its stop - `load` (N.m, against the + direction) at the stop,
+    in proportion short of it, like gravity on an arm tilting up - with a capped P drive of stiffness `kp`
+    (N.m/rad) plus the command's feed-forward: it stops wherever cap + feed-forward cannot carry the load,
+    and its effort reads what the drive applies."""
+
+    def __init__(self, load=5.0, kp=400.0, **kwargs):
+        super().__init__(**kwargs)
+        self.load, self.kp, self.effort = load, kp, 0.0
+
+    def state(self) -> JointState:
+        state = super().state()
+        return JointState(name=state.name, position=state.position, velocity=state.velocity,
+                          effort=[self.effort], header=state.header)
+
+    def apply(self, command, defines) -> None:
+        if "j" in defines:
+            self.offset = defines["j"] - self.position
+        before = self.position
+        cap = float(command.max_effort[0])
+        target = float(command.position[0]) - self.offset
+        drive = float(np.clip(self.kp * (target - self.position) + float(command.feedforward_effort[0]), -cap, cap))
+        self.effort = drive
+        if drive > self.load * max(self.position, 0.0) / self.stop:  # carries the load here: follows, never past the stop
+            self.position = min(self.stop, max(self.position, min(target, self.position + 1.0 * DT)))
+        self.velocity = (self.position - before) / DT
+        self.time += DT
+
+
+def effort_seek(cap: float, feedforward: float, condition) -> JointCommandSequence:
+    return JointCommandSequence(
+        joint_names=("j",),
+        steps=(
+            JointCommandStep(
+                name="seek",
+                commands=(JointCommand.move_by("j", 1.0, speed=0.5, max_effort=cap, feedforward_effort=feedforward),),
+                done_when=(condition,),
+                timeout=5.0,
+                define_position={"j": 2.0},
+            ),
+        ),
+    )
+
+
+def test_an_effort_stall_is_the_stop_and_never_gravity():
+    """The full arm's J1 (2026-11-14): with its feed-forward off and its cap under the load plus a margin, a seek stops
+    short where its drive saturates on gravity. A lead rule reads that as the stop; EffortStall - effort past `effort`
+    while still - does not: it ends on the real stop with a cap above the threshold, and times out (never defines) below."""
+    from robot_msgs.control import EffortStall
+
+    # cap 11 over a 5 N.m load, no feed-forward: it reaches the stop and presses there past 9 N.m
+    joint = GravityJoint(position=0.1, stop=0.4, load=5.0)
+    controller, _ = run(effort_seek(11.0, 0.0, EffortStall(joint="j", effort=9.0)), joint)
+    assert controller.status == "done" and controller.events[-1].outcome == "EffortStall j"
+    assert joint.position == pytest.approx(0.4)  # on the stop, where the drive pressed past 9 N.m
+    # cap 6 against 7 N.m at the stop: it stops short where gravity reaches 6 and can never press 9 - it times out
+    short = GravityJoint(position=0.1, stop=0.4, load=7.0)
+    controller, _ = run(effort_seek(6.0, 0.0, EffortStall(joint="j", effort=9.0)), short)
+    assert controller.status == "aborted" and controller.events[-1].outcome == "timeout" and short.position < 0.4
+    # the lead rule on that same seek records the gravity stall as a stop - the trap EffortStall exists for
+    trap = GravityJoint(position=0.1, stop=0.4, load=7.0)
+    controller, _ = run(effort_seek(6.0, 0.0, Stall(joint="j")), trap)
+    assert controller.status == "done" and controller.events[-1].outcome == "Stall j" and trap.position < 0.4
+
+
+def test_an_effort_stall_round_trips_and_is_refused_without_a_positive_threshold():
+    import json
+
+    from robot_msgs.control import EffortStall
+
+    sequence = effort_seek(11.0, 0.0, EffortStall(joint="j", effort=9.0, speed=0.02, dwell=0.3))
+    again = JointCommandSequence.from_dict(json.loads(json.dumps(sequence.to_dict())))
+    assert again == sequence and isinstance(again.steps[0].done_when[0], EffortStall)
+    with pytest.raises(ValueError, match="effort"):
+        EffortStall(joint="j", effort=0.0)

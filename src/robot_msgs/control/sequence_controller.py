@@ -25,6 +25,7 @@ from robot_msgs.control.joint_command import (
     JointCommandSequence,
     JointCommandStep,
     Reached,
+    EffortStall,
     Settled,
     Stall,
 )
@@ -124,7 +125,7 @@ class JointCommandSequenceController:
                     f"in step {self.step.name!r}",
                 )
                 return self._limp(state), defines
-            outcome = self._done_by(positions, velocities, dt, elapsed)
+            outcome = self._done_by(positions, velocities, dt, elapsed, efforts)
             if outcome is not None:
                 step = self.step
                 self.events.append(
@@ -216,7 +217,8 @@ class JointCommandSequenceController:
             header=Header(stamp=state.header.stamp, frame_id=state.header.frame_id),
         )
 
-    def _done_by(self, positions, velocities, dt: float, elapsed: float) -> str | None:
+    def _done_by(self, positions, velocities, dt: float, elapsed: float, efforts=None) -> str | None:
+        efforts = efforts or {}
         timers = self._timers
 
         def dwelt(key: tuple[int, str], ok: bool, dwell: float) -> bool:
@@ -233,6 +235,13 @@ class JointCommandSequenceController:
                 slow = abs(velocities[condition.joint]) < condition.speed
                 if dwelt((index, condition.joint), lead > condition.lead and slow, condition.dwell):
                     return f"Stall {condition.joint}"
+            elif isinstance(condition, EffortStall):
+                track = self._tracks[condition.joint]
+                effort = efforts.get(condition.joint)
+                pushing = effort is not None and (track.direction or 1) * effort > condition.effort
+                slow = abs(velocities[condition.joint]) < condition.speed
+                if dwelt((index, condition.joint), pushing and slow, condition.dwell):
+                    return f"EffortStall {condition.joint}"
             elif isinstance(condition, Reached):
                 ok = True
                 for name in condition.joints:
