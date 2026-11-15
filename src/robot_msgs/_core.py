@@ -42,11 +42,53 @@ def frozen_array(value: Any, dtype: Any = np.float64) -> np.ndarray:
         if not value.flags.writeable and _is_owned(value):
             return value
     array = np.array(value, dtype=dtype, copy=True)
-    return adopt(array)
+    return freeze_new(array)
 
 
 def adopt(array: np.ndarray) -> np.ndarray:
-    """Freeze an array this library just allocated, without copying it. Internal use only."""
+    """Hand `array` to robot_msgs without a copy: a message built from it, or from any view of it,
+    keeps it as it is. Returns `array` itself.
+
+    For memory nobody writes again: numpy views over a received buffer (an Arrow column, a socket
+    frame, shared memory), or an array you just filled. A read-only array is kept as it is; a
+    writeable one that owns its memory is frozen in place (`array.flags.writeable` turns False).
+    Adopting a view hands over the whole array it views, so its other views are kept too.
+
+    Refused with a `ValueError`, because someone could still write the memory under a message: a
+    writeable view (its memory belongs to another array or buffer; freeze it with
+    ``array.setflags(write=False)`` once nothing writes it), and a view of a writeable array.
+    Memory behind a non-numpy buffer (bytes, a ctypes pointer, an Arrow buffer) is your promise:
+    it must not change while a message holds it.
+
+    WHY public (like_keras v0 contract §2.3, 2026-11-15): `frozen_array` copies every array this
+    library did not freeze itself, so without `adopt` every receive across a process copies.
+    """
+    if not isinstance(array, np.ndarray):
+        raise TypeError(
+            f"adopt takes a numpy array, got {type(array).__name__} (frozen_array copies anything)"
+        )
+    if array.flags.writeable and not array.flags.owndata:
+        raise ValueError(
+            "adopt refuses a writeable view: its memory belongs to another array or buffer that "
+            "can still write it; call array.setflags(write=False) once nothing does, or pass a copy"
+        )
+    root = array
+    while isinstance(root.base, np.ndarray):
+        root = root.base
+        if root.flags.writeable:
+            raise ValueError(
+                "adopt refuses a view of a writeable array: its owner can still write the memory; "
+                "freeze the owner (owner.setflags(write=False)) or pass a copy"
+            )
+    # WHY own the root, not `array`: numpy collapses a view's base to the array holding the memory,
+    # so a row of an adopted (N, J) reshape points at the flat buffer, never at the reshape.
+    freeze_new(root)
+    return array
+
+
+def freeze_new(array: np.ndarray) -> np.ndarray:
+    """Freeze and own an array this library just made (or a view of a temporary only it holds),
+    without copying or checking. Internal use only; callers outside go through `adopt`."""
     array.setflags(write=False)
     _OWNED[id(array)] = array
     return array
@@ -358,7 +400,7 @@ def _decode_array(value: Mapping[str, Any], arrays: Mapping[str, np.ndarray] | N
             raise ValueError("array reference without an npz archive")
         return frozen_array(arrays[value["npz"]], None)
     array = np.array(value["data"], dtype=np.dtype(value["dtype"])).reshape(value["shape"])
-    return adopt(array)
+    return freeze_new(array)
 
 
 def save_npz(msg: Msg, path: Any) -> None:

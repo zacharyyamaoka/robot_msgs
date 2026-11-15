@@ -24,7 +24,7 @@ from typing import Any, ClassVar, Literal, TypeVar
 
 import numpy as np
 
-from robot_msgs._core import Array, FrozenDict, Msg, adopt, frozen_array, set_field, short_repr
+from robot_msgs._core import Array, FrozenDict, Msg, freeze_new, frozen_array, set_field, short_repr
 from robot_msgs.geometry.rotations import quat_slerp
 from robot_msgs.std import Header
 from robot_msgs.trajectory import time_repair
@@ -250,7 +250,7 @@ class Trajectory(Msg):
             raise IndexError(f"mask has shape {index.shape}, trajectory has {len(self)} samples")
         if index.dtype != bool and index.dtype.kind not in "iu":
             raise TypeError(f"cannot index a trajectory with {index.dtype} values")
-        return self._map_samples(lambda array: adopt(array[index]))
+        return self._map_samples(lambda array: freeze_new(array[index]))
 
     def _map_samples(self: TrajectoryT, function: Any) -> TrajectoryT:
         """The same trajectory with `function` applied to every per-sample array (and `t`)."""
@@ -516,13 +516,13 @@ def _interpolate(
     alpha: np.ndarray,
 ) -> np.ndarray:
     if kind == "hold":
-        return adopt(array[np.where(alpha >= 1.0, upper, lower)])
+        return freeze_new(array[np.where(alpha >= 1.0, upper, lower)])
     weight = alpha.reshape(-1, *([1] * (array.ndim - 1)))
     if kind == "linear":
         # (1 - w)·a + w·b, not a + w·(b - a): both endpoints come back bit-exact.
-        return adopt((1.0 - weight) * array[lower] + weight * array[upper])
+        return freeze_new((1.0 - weight) * array[lower] + weight * array[upper])
     if kind == "slerp":
-        return adopt(quat_slerp(array[lower], array[upper], weight[..., 0]))
+        return freeze_new(quat_slerp(array[lower], array[upper], weight[..., 0]))
     raise ValueError(f"unknown interpolation {kind!r}")
 
 

@@ -5,9 +5,11 @@ from dataclasses import dataclass, field
 import numpy as np
 import pytest
 
+import robot_msgs
 from robot_msgs._core import (
     Array,
     Msg,
+    adopt,
     allclose,
     frozen_array,
     load_npz,
@@ -16,6 +18,7 @@ from robot_msgs._core import (
     save_npz,
     set_field,
 )
+from robot_msgs.control import ServoState
 from robot_msgs.std import Header
 
 
@@ -53,6 +56,49 @@ def test_a_callers_read_only_array_is_still_copied():
     theirs.setflags(write=False)
     msg = Sample(values=theirs)
     assert not np.shares_memory(msg.values, theirs)  # they could flip it writeable again
+
+
+# ── robot_msgs.adopt: the public no-copy door ────────────────────────────────
+
+
+def test_adopt_keeps_a_read_only_buffer_view_and_its_views_without_a_copy():
+    # What a transport hands over on receive: read-only numpy views over bytes it did not allocate,
+    # a flat column reshaped to (samples, joints). like_keras v0 contract §7.3.
+    frame = np.arange(6.0).tobytes()
+    column = np.frombuffer(frame, dtype=np.float64)
+    rows = column.reshape(2, 3)
+    assert robot_msgs.adopt(rows) is rows
+    row = rows[1]  # numpy makes its base the flat column, not `rows`
+    assert frozen_array(rows) is rows and frozen_array(row) is row
+    assert Sample(values=rows).values is rows
+    state = ServoState(name=("j1", "j2", "j3"), position=rows[1])
+    assert np.shares_memory(state.position, column) and state.position.tolist() == [3.0, 4.0, 5.0]
+
+
+def test_adopt_freezes_a_writeable_array_that_owns_its_memory_in_place():
+    fresh = np.arange(3.0)
+    assert robot_msgs.adopt(fresh) is fresh
+    assert not fresh.flags.writeable
+    assert Sample(values=fresh).values is fresh
+
+
+def test_adopt_refuses_memory_someone_can_still_write():
+    owner = np.arange(4.0)
+    writeable_view = owner[:2]
+    with pytest.raises(ValueError, match="refuses a writeable view"):
+        robot_msgs.adopt(writeable_view)
+    read_only_view = owner[:2]
+    read_only_view.setflags(write=False)
+    with pytest.raises(ValueError, match="refuses a view of a writeable array"):
+        robot_msgs.adopt(read_only_view)
+    assert owner.flags.writeable and writeable_view.flags.writeable  # never touched
+    assert not np.shares_memory(Sample(values=read_only_view).values, owner)  # still copied
+    with pytest.raises(TypeError, match="adopt takes a numpy array"):
+        robot_msgs.adopt([1.0, 2.0])
+
+
+def test_adopt_is_public():
+    assert "adopt" in robot_msgs.__all__ and robot_msgs.adopt is adopt
 
 
 def test_equality_and_hash_are_by_value():

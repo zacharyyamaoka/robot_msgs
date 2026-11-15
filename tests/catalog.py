@@ -44,7 +44,7 @@ from robot_msgs.geometry import (
 from robot_msgs.manipulation import CartesianLimits, GraspPose, Waypoint, WaypointAction
 from robot_msgs.sensor import CameraInfo, Image, Imu, JointState, PointCloud
 from robot_msgs.shape import MeshResource, Plane, SolidPrimitive
-from robot_msgs.std import ColorRGBA, Header
+from robot_msgs.std import ColorRGBA, DiagnosticRecord, Header, LogRecord, Metrics
 from robot_msgs.trajectory import (
     JointLimits,
     JointTrajectory,
@@ -111,6 +111,30 @@ L_PRISM = SolidPrimitive.prism(0.4, [(0, 0), (2, 0), (2, 1), (1, 1), (1, 2), (0,
 EXAMPLES = [
     HEADER,
     ColorRGBA(0.5, 0.25, 0.75, 1.0),
+    LogRecord(
+        header=Header(stamp=1_761_600_000.5),
+        path="pick_cell.arm.jtc",
+        tick=4812,
+        level=30,
+        message="input 'state' is 12.0 ms old (limit 5.0 ms)",
+    ),
+    DiagnosticRecord(
+        header=Header(stamp=1_761_600_001.0),
+        path="pick_cell.arm.jtc",
+        level="warn",
+        code="InputStale",
+        message="input 'state' is 12.0 ms old (limit 5.0 ms)",
+        mode="operational",
+        expected_period_s=1.0,
+        uptime_s=93.5,
+        stale_inputs=("state",),
+    ),
+    Metrics(
+        header=Header(stamp=1_761_600_001.0),
+        path="pick_cell.arm.jtc",
+        names=("steps", "step_p99_s", "overruns", "input_age_s.state"),
+        values=[1000.0, 0.000183, 0.0, float("nan")],
+    ),
     Vector3(1.0, -2.0, 0.5),
     Point(0.1, 0.2, 0.3),
     Quaternion.from_euler(0.1, 0.2, 0.3),

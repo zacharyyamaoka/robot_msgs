@@ -12,7 +12,7 @@ from typing import ClassVar
 
 import numpy as np
 
-from robot_msgs._core import Array, adopt, set_field
+from robot_msgs._core import Array, freeze_new, set_field
 from robot_msgs.sensor import JointState
 from robot_msgs.std import Header
 from robot_msgs.trajectory.joint_limit_violation import joint_limit_violations
@@ -86,7 +86,7 @@ class JointTrajectory(Trajectory):
         """Only `names`, in that order. Channels are per-sample, so they are kept whole."""
         columns = [self.joint_index(name) for name in names]
         changes = {
-            f.name: adopt(getattr(self, f.name)[:, columns])
+            f.name: freeze_new(getattr(self, f.name)[:, columns])
             for f in sample_fields(type(self))
             if getattr(self, f.name) is not None
         }

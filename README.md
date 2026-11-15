@@ -81,7 +81,7 @@ returns `(trajectory, repair)` and writes the same receipt into `header.meta`; n
 
 | Import | Types |
 |---|---|
-| `robot_msgs.std` | `Header` `ColorRGBA` |
+| `robot_msgs.std` | `Header` `ColorRGBA` · a running component's own reports: `LogRecord` `DiagnosticRecord` `Metrics` |
 | `robot_msgs.geometry` | `Vector3` `Point` `Quaternion` `Pose` `Pose2D` `Transform` `Twist` `Wrench` `Accel` `Inertia` `PoseStamped` `TransformStamped` · batch maths in `geometry.rotations` (incl. direct `euler_to_matrix` / `matrix_to_euler`) |
 | `robot_msgs.sensor` | `JointState` `Image` `CameraInfo` `PointCloud` `Imu` |
 | `robot_msgs.control` | `ServoState` `ServoCommand` |
@@ -93,6 +93,7 @@ returns `(trajectory, repair)` and writes the same receipt into `header.meta`; n
 
 Every message: `==` and `hash` by value, a short `repr`, `replace(...)`, `to_dict()` /
 `from_dict()`, `save_npz` / `load_npz`, pickling.
+`robot_msgs.adopt(array)` hands a numpy array over without a copy (a view of a received buffer).
 
 ## Conventions
 

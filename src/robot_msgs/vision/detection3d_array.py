@@ -8,7 +8,7 @@ from typing import overload
 
 import numpy as np
 
-from robot_msgs._core import Array, Msg, adopt, set_field
+from robot_msgs._core import Array, Msg, freeze_new, set_field
 from robot_msgs.std import Header
 from robot_msgs.vision.detection3d import Detection3D
 
@@ -49,10 +49,10 @@ class Detection3DArray(Msg):
         scores = np.array([d.score for d in self.detections], dtype=np.float64)
         class_ids = np.array([d.class_id for d in self.detections], dtype=np.str_)
         return {
-            "centers": adopt(centers.reshape(len(self), 3).astype(np.float64)),
-            "sizes": adopt(sizes.reshape(len(self), 3).astype(np.float64)),
-            "scores": adopt(scores),
-            "class_ids": adopt(class_ids),
+            "centers": freeze_new(centers.reshape(len(self), 3).astype(np.float64)),
+            "sizes": freeze_new(sizes.reshape(len(self), 3).astype(np.float64)),
+            "scores": freeze_new(scores),
+            "class_ids": freeze_new(class_ids),
         }
 
     def filtered(

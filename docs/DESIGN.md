@@ -41,6 +41,11 @@ traj_compare, sim, drivers) can depend on it, and it depends on nothing but nump
    marks the array read-only; views of it (slices, rows, columns) are then free and still
    read-only. WHY: Zach wants "the most compact, efficient storage, with many views of it".
    Tuple-backed storage (bam_traj_gen) makes every numpy "view" a copy.
+   `robot_msgs.adopt(array)` is the one public way around the copy, for memory nobody writes
+   again (numpy views over a received buffer): it keeps a read-only array as it is, freezes a
+   writeable one that owns its memory in place, and refuses a writeable view or a view of a
+   writeable array. WHY public (like_keras, 2026-11-15): without it every receive across a process
+   copies.
 5. **Validate at construction.** Shapes, lengths, monotonic time and name counts fail in
    `__post_init__` with a `ValueError` naming the field, never later in a consumer.
 6. **One type per file, named for the type** (`geometry/pose_stamped.py` → `PoseStamped`), plus
@@ -105,7 +110,7 @@ class JointState(Msg):
 
 | Package | Types (one file each) | ROS source |
 |---|---|---|
-| `robot_msgs.std` | `Header`, `ColorRGBA` | std_msgs |
+| `robot_msgs.std` | `Header`, `ColorRGBA`; what a running component reports about itself: `LogRecord` (stdlib logging levels), `DiagnosticRecord` (a flat subset of io-diagnostics' DiagnosticStatus v0: `unknown` is the zero value, `stale` is derived, never sent), `Metrics` (parallel `names` / `values`) | std_msgs; rcl_interfaces/Log; diagnostic_msgs |
 | `robot_msgs.geometry` | `Vector3`, `Point`, `Quaternion`, `Pose`, `Pose2D`, `Transform`, `Twist`, `Wrench`, `Accel`, `Inertia`, `PoseStamped`, `TransformStamped`; batch math in `rotations.py` | geometry_msgs |
 | `robot_msgs.shape` | `SolidPrimitive`, `Mesh`, `Plane`, `MeshResource` — solids and surfaces for any 3-D scene (see *Shapes*); `Material` is not here | shape_msgs (`MeshResource`: URDF `<mesh>`) |
 | `robot_msgs.sensor` | `JointState`, `Image`, `CameraInfo`, `PointCloud`, `Imu` | sensor_msgs |

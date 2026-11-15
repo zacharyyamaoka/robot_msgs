@@ -8,7 +8,7 @@ from typing import overload
 
 import numpy as np
 
-from robot_msgs._core import Array, Msg, adopt, set_field
+from robot_msgs._core import Array, Msg, freeze_new, set_field
 from robot_msgs.std import Header
 from robot_msgs.vision.detection2d import Detection2D
 
@@ -48,9 +48,9 @@ class Detection2DArray(Msg):
         scores = np.array([d.score for d in self.detections], dtype=np.float64)
         class_ids = np.array([d.class_id for d in self.detections], dtype=np.str_)
         return {
-            "boxes_xyxy": adopt(boxes.reshape(len(self), 4)),
-            "scores": adopt(scores),
-            "class_ids": adopt(class_ids),
+            "boxes_xyxy": freeze_new(boxes.reshape(len(self), 4)),
+            "scores": freeze_new(scores),
+            "class_ids": freeze_new(class_ids),
         }
 
     def filtered(

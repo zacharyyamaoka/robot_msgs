@@ -12,7 +12,7 @@ from typing import ClassVar
 
 import numpy as np
 
-from robot_msgs._core import Array, adopt, set_field
+from robot_msgs._core import Array, freeze_new, set_field
 from robot_msgs.geometry import Point, Pose, Quaternion, Transform
 from robot_msgs.geometry.rotations import (
     matrix_to_pose,
@@ -83,7 +83,7 @@ class PoseTrajectory(Trajectory):
             if np.any(norms < 1e-9):
                 raise ValueError("PoseTrajectory.orientations contains a zero quaternion")
             if not np.allclose(norms, 1.0, atol=1e-12):
-                set_field(self, "orientations", adopt(quat_normalize(self.orientations)))
+                set_field(self, "orientations", freeze_new(quat_normalize(self.orientations)))
 
     @classmethod
     def from_poses(
