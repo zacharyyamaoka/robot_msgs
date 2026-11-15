@@ -115,7 +115,7 @@ class JointState(Msg):
 | `robot_msgs.shape` | `SolidPrimitive`, `Mesh`, `Plane`, `MeshResource` — solids and surfaces for any 3-D scene (see *Shapes*); `Material` is not here | shape_msgs (`MeshResource`: URDF `<mesh>`) |
 | `robot_msgs.sensor` | `JointState`, `Image`, `CameraInfo`, `PointCloud`, `Imu` | sensor_msgs |
 | `robot_msgs.control` | `ServoState`, `ServoCommand` — the seam a controller loops across: read a stamped state, send a command that names the state it came from (`latency`) | — (moteus position mode; the "MIT mode" of Damiao/RobStride/CubeMars/Unitree) |
-| `robot_msgs.manipulation` | `GraspPose`, `Waypoint` (+ `WaypointLabel`), `WaypointAction`, `CartesianLimits` — what a grasp detector hands the trajectory generator, and the request the generator takes in (see *Manipulation*) | moveit_msgs (`Grasp`, `MotionPlanRequest`) |
+| `robot_msgs.manipulation` | `GraspPose`, `Waypoint` (+ `WaypointLabel`), `WaypointAction`, `CartesianLimits` — what a grasp detector hands the trajectory generator, and the request the generator takes in (see *Manipulation*); `NamedPose` — a robot's saved positions by name (see *Named poses*) | moveit_msgs (`Grasp`, `MotionPlanRequest`); SRDF `<group_state>` |
 | `robot_msgs.vision` | `BoundingBox2D`, `BoundingBox3D`, `ObjectHypothesis`, `ObjectHypothesisWithPose`, `Detection2D`, `Detection2DArray`, `Detection3D`, `Detection3DArray` | vision_msgs |
 | `robot_msgs.trajectory` | `Trajectory`, `TrajectoryPoint`, `JointTrajectory`, `JointTrajectoryPoint`, `PoseTrajectory`, `PoseTrajectoryPoint`, `JointLimits` (with each joint's `position_kind`), `JointLimitViolation` + `joint_limit_violations`, `concatenate` | trajectory_msgs, nav_msgs/Path; URDF `<limit>` |
 | `robot_msgs.compare` | `compare(reference, measured)` → `Comparison` (error trajectory + `ErrorStats` per metric), `align`, `error_stats`; also `traj.compare(other)` — numpy only | control_msgs/JointTrajectoryControllerState (error sign) |
@@ -419,6 +419,51 @@ in robot_msgs"). Prior art: his bam_msgs `WaypointAction` and bam_traj_gen's wor
 - **Limits are the action's.** `cartesian_limits` (`CartesianLimits`, bam_traj_gen's defaults),
   `arm_limits` and `hand_limits` (`trajectory.JointLimits`, checked against `arm_joints` /
   `hand_joints`).
+
+## Named poses — a robot's saved positions, by name
+
+Decided 2026-11-15 (Zach: *"each robot description can basically have a number of saved positions
+that could be like in joint space or Cartesian space. And then ready position is just a saved
+position in space. And so all the code should not be like referencing an exact position, but should
+rather be like accessing that saved position by name"*). The rig's READY had been copied into four
+modules at three precisions (65.2 / 65.246 / the IK's full float); moving it meant finding them all.
+
+```python
+ready = NamedPose.from_degrees(name="ready", group="arm", degrees={"revolute_3": -12.7, ...},
+                               why="where the arm waits between picks")
+find_named_pose(description_poses, "ready").position_of("revolute_3")    # rad
+ready.digest()                                  # "where it is", 16 hex: records carry it
+named_poses_to_srdf(poses, "bam_fb_v2")         # MoveIt's <group_state>, values exact
+named_poses_to_json(poses, "bam_fb_v2")         # lossless, each pose with its digest
+```
+
+- **The stock part is MoveIt's SRDF `<group_state>`** (`setNamedTarget` / `getNamedTargetValues`):
+  name + group + one value per joint, in the URDF's joint frame. `named_poses_to_srdf` writes it
+  (values printed with `repr`, so they read back to the same float) and `named_poses_from_srdf`
+  reads one. Prior art at home: Zach's 2025 `RobotParam._init_saved_poses` (ZERO / HOME / READY as a
+  joint state *and* the tool pose it gives, captured from the arm by `save_curr_pose.py`, which also
+  printed the `<group_state>` to paste into moveit_config).
+- **Joint or Cartesian, one type.** A joint pose's `positions` are its target. A Cartesian pose
+  (`tool_pose` + `tip_link`) is resolved by an IK the caller passes, which returns every solution;
+  the tie-break keeps the one whose largest single-joint move from the seed (`positions`) is
+  smallest, then the smallest overall move (`nearest_solution`). WHY that order: a branch flip is
+  one joint swinging far, which a sum over joints hides. A Cartesian pose refuses to hand out its
+  seed as if it were the target (`position_of` raises; `resolved(ik)` first). robot_msgs has no IK
+  of its own: kinematics belong to the description.
+- **The digest names where the pose is.** sha256 (16 hex) over name, group, kind and every joint
+  value sorted by joint name (plus the tool pose and tip link of a Cartesian one). Not `why`
+  (rewording moves nothing) and not `tolerance` (how close counts is the reader's judgement). A
+  record measured at "ready" stores the digest; a reader compares it with the description's and
+  calls a mismatch stale, without comparing numbers. The algorithm is pinned by a test: changing it
+  would call every record stale.
+- **The description publishes a JSON beside the SRDF** (`named_poses_to_json`): each pose's own
+  `to_dict` and its digest, so a reader with only a JSON parser (the rig's stdlib monitor) can check
+  a record. `named_poses_from_json` refuses an entry whose digest is not its pose's own: the file
+  was edited by hand; regenerate it from the description.
+- **The description owns the poses; nothing else holds a number.** A consumer asks by name. A
+  calibration fitted at a pose (an aim, a feed-forward basis) records the digest it was fitted at,
+  so moving the pose shows up as a failing check, not a silent mismatch.
+- **Not a message on any wire:** no ROS mapping (an SRDF entry is configuration, not traffic).
 
 ## Extending without forking
 

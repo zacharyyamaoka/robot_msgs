@@ -41,7 +41,7 @@ from robot_msgs.geometry import (
     Vector3,
     Wrench,
 )
-from robot_msgs.manipulation import CartesianLimits, GraspPose, Waypoint, WaypointAction
+from robot_msgs.manipulation import CartesianLimits, GraspPose, NamedPose, Waypoint, WaypointAction
 from robot_msgs.sensor import CameraInfo, Image, Imu, JointState, PointCloud
 from robot_msgs.shape import MeshResource, Plane, SolidPrimitive
 from robot_msgs.std import ColorRGBA, DiagnosticRecord, Header, LogRecord, Metrics
@@ -228,6 +228,22 @@ EXAMPLES = [
         header=HEADER.replace(frame_id="world"),
     ),
     CartesianLimits(max_linear_velocity=0.5, max_angular_jerk=math.inf),
+    NamedPose.from_degrees(
+        name="ready",
+        group="arm",
+        degrees={"joint_1": -12.7, "joint_2": -24.754, "joint_3": 90.0},
+        tolerance_deg=3.0,
+        why="where the arm waits between picks",
+    ),
+    NamedPose(
+        name="over_bin",
+        group="arm",
+        joint_names=("joint_1", "joint_2", "joint_3"),
+        positions=[0.0, -0.5, 1.2],
+        tool_pose=PoseStamped.from_xyz_rpy(0.42, -0.05, 0.40, math.pi, 0.0, 0.0, frame_id="world"),
+        tip_link="tcp",
+        why="the claw 40 mm over the bin's drop, plumb",
+    ),
     Waypoint(
         name="closed_grasp",
         label="close",
