@@ -1,6 +1,7 @@
 """NamedPose: a robot's saved positions by name (MoveIt SRDF group_state), their digest, the
 Cartesian kind's IK tie-break, and the SRDF / JSON files a description publishes."""
 
+import json
 import math
 import xml.etree.ElementTree as ElementTree
 
@@ -227,3 +228,35 @@ def test_json_is_lossless_and_refuses_a_hand_edit():
         named_poses_from_json(edited)
     with pytest.raises(ValueError, match="schema"):
         named_poses_from_json('{"schema": "something-else", "poses": []}')
+
+
+# ----------------------------------------------------------------------------------------- description
+
+
+def test_description_defaults_empty_and_is_taken_by_from_degrees_and_resolved():
+    assert READY.description == ""
+    described = NamedPose.from_degrees(name="ready", group="arm", degrees={"j": 1.0},
+                                       description="Parked above the bin; the arm waits here.")
+    assert described.description == "Parked above the bin; the arm waits here."
+    assert described.resolved().description == described.description
+
+
+def test_description_leaves_the_digest_alone():
+    assert READY.replace(description="where the arm waits").digest() == READY.digest()
+
+
+def test_json_carries_a_description_and_omits_an_empty_one():
+    described = READY.replace(description="Parked above the bin; the arm waits here.")
+    text = named_poses_to_json((described,), "r")
+    assert json.loads(text)["poses"][0]["pose"]["description"] == described.description
+    assert named_poses_from_json(text)[0].description == described.description
+    # empty: no key, so a file published before the field existed is unchanged
+    plain = named_poses_to_json((READY,), "r")
+    assert "description" not in json.loads(plain)["poses"][0]["pose"]
+    assert named_poses_from_json(plain)[0].description == ""
+
+
+def test_srdf_prints_a_description_only_when_there_is_one():
+    assert "waits here" not in named_poses_to_srdf((READY,), "r")
+    srdf = named_poses_to_srdf((READY.replace(description="The arm waits here."),), "r")
+    assert "<!-- The arm waits here. -->" in srdf

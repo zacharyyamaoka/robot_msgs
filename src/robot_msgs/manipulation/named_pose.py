@@ -57,8 +57,11 @@ class NamedPose(Msg):
       becomes joint values through an IK the caller passes (`joint_state`, `resolved`), which
       keeps the solution nearest the seed (`nearest_solution`).
     - `why`: the reason for these numbers, kept beside them.
+    - `description`: one or two plain sentences saying what the pose is for and when the robot
+      uses it, for people and UIs ("Parked above the bin, clear of the camera's view; the arm
+      waits here between picks."). `why` explains the numbers; `description` explains the pose.
 
-    `digest()` names WHERE the pose is (names and numbers, not `why` or `tolerance`): a record
+    `digest()` names WHERE the pose is (names and numbers, not `why`, `description` or `tolerance`): a record
     measured at this pose carries the digest, and a different digest means the pose moved since.
 
     WHY a type and not constants (Zach, 2026-11-15, module docstring): a literal copied into each
@@ -74,6 +77,7 @@ class NamedPose(Msg):
     tool_pose: PoseStamped | None = None
     tip_link: str = ""
     why: str = ""
+    description: str = ""
 
     def __post_init__(self) -> None:
         for label in ("name", "group"):
@@ -119,6 +123,7 @@ class NamedPose(Msg):
                              "without a tool_pose")
         set_field(self, "tip_link", str(self.tip_link))
         set_field(self, "why", str(self.why))
+        set_field(self, "description", str(self.description))
 
     @classmethod
     def from_degrees(
@@ -129,6 +134,7 @@ class NamedPose(Msg):
         degrees: Mapping[str, float],
         tolerance_deg: float | Mapping[str, float] | None = None,
         why: str = "",
+        description: str = "",
     ) -> NamedPose:
         """A joint-space pose written in degrees (what people read), stored in radians (SI).
         `tolerance_deg` is one number for every joint or one per joint."""
@@ -140,7 +146,7 @@ class NamedPose(Msg):
             tolerance = [math.radians(float(per_joint[n])) for n in names]
         return cls(name=name, group=group, joint_names=names,
                    positions=[math.radians(float(degrees[n])) for n in names],
-                   tolerance=tolerance, why=why)
+                   tolerance=tolerance, why=why, description=description)
 
     @property
     def kind(self) -> NamedPoseKind:
@@ -183,7 +189,7 @@ class NamedPose(Msg):
 
     def resolved(self, ik: InverseKinematics | None = None) -> NamedPose:
         """This pose in joint space. A joint pose comes back as it is; a Cartesian one needs `ik`
-        and comes back as a joint pose (same name, group, tolerance, why) at the solution
+        and comes back as a joint pose (same name, group, tolerance, why, description) at the solution
         `nearest_solution` keeps."""
         if self.tool_pose is None:
             return self
@@ -195,7 +201,8 @@ class NamedPose(Msg):
             raise ValueError(f"NamedPose {self.name!r}: the IK found no solution for "
                              f"{self.tip_link} at {self.tool_pose!r}")
         return NamedPose(name=self.name, group=self.group, joint_names=self.joint_names,
-                         positions=solution, tolerance=self.tolerance, why=self.why)
+                         positions=solution, tolerance=self.tolerance, why=self.why,
+                         description=self.description)
 
     def deviation(self, state: JointState | Mapping[str, float]) -> dict[str, float]:
         """``state - target`` for each of this pose's joints (rad, unwrapped: say which turn you
@@ -210,7 +217,7 @@ class NamedPose(Msg):
         """16 hex of sha256 over where the pose is: name, group, kind and every joint's value
         (sorted by joint name), plus a Cartesian pose's tool pose and tip link.
 
-        Not `why` (rewording the reason moves nothing) and not `tolerance` (how close counts is the
+        Not `why` or `description` (rewording either moves nothing) and not `tolerance` (how close counts is the
         reader's judgement, made against the pose as it is now). WHY a digest: a record measured
         at "ready" carries it, so a reader tells "measured at THIS ready" from "at an older one"
         without comparing numbers."""
@@ -310,6 +317,8 @@ def named_poses_to_srdf(
     for pose in poses:
         lines.append(f"  <!-- {_comment(pose.name)} ({_comment(pose.group)}), "
                      f"digest {pose.digest()}: {_comment(pose.why)} -->")
+        if pose.description:  # WHY only when stated: a pose without one prints byte-for-byte as before
+            lines.append(f"  <!-- {_comment(pose.description)} -->")
         lines.append(f"  <group_state name={quoteattr(pose.name)} group={quoteattr(pose.group)}>")
         for joint, value in zip(pose.joint_names, pose.positions, strict=True):
             lines.append(f'    <joint name={quoteattr(joint)} value="{float(value)!r}"/>'
@@ -337,6 +346,16 @@ def named_poses_from_srdf(text: str) -> tuple[NamedPose, ...]:
     return check_named_poses(out)
 
 
+def _pose_dict(pose: NamedPose) -> dict:
+    """`to_dict`, minus an empty `description`: WHY omitted, so a file published before the field
+    existed stays byte-identical (published JSON is compared with what the records generate);
+    `from_dict` reads a missing key as ""."""
+    out = pose.to_dict()
+    if not pose.description:
+        del out["description"]
+    return out
+
+
 def named_poses_to_json(poses: Iterable[NamedPose], robot: str, *, source: str = "") -> str:
     """The lossless file a description publishes: ``{"schema", "robot", "source", "poses": [{name,
     group, kind, digest, pose}]}``, ``pose`` being the message's own `to_dict`. The digest beside
@@ -348,7 +367,7 @@ def named_poses_to_json(poses: Iterable[NamedPose], robot: str, *, source: str =
         "source": str(source),
         "poses": [
             {"name": p.name, "group": p.group, "kind": p.kind, "digest": p.digest(),
-             "pose": p.to_dict()}
+             "pose": _pose_dict(p)}
             for p in check_named_poses(poses)
         ],
     }
