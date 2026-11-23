@@ -36,7 +36,7 @@ from robot_msgs._core import (
     to_dict,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 __all__ = [
     "compare",

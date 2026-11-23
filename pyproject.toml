@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "robot-msgs"
-version = "0.3.0"
+version = "0.3.1"
 description = "Standard robot message types as frozen Python dataclasses, with the helper functions ROS messages never had."
 readme = "README.md"
 license = "MIT"
@@ -24,8 +24,9 @@ requires-python = ">=3.11"
 dependencies = ["numpy>=1.26", "dataclass-values>=0.1.0"]
 
 [project.urls]
-Homepage = "https://robotmsgs.com"
-Source = "https://github.com/zacharyyamaoka/robot_msgs"
+Homepage = "https://github.com/zacharyyamaoka/robot_msgs"
+Repository = "https://github.com/zacharyyamaoka/robot_msgs"
+Documentation = "https://robotmsgs.com"
 
 [project.optional-dependencies]
 viz = ["matplotlib>=3.8", "imageio-ffmpeg>=0.5"]
