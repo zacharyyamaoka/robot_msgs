@@ -7,8 +7,17 @@ into a `JointTrajectory`. moveit_msgs is the ROS analogue (`Grasp`, `MotionPlanR
 
 A robot's saved positions are `NamedPose`s ("ready", "home"): MoveIt's SRDF `<group_state>`, looked
 up by name (`find_named_pose`) so no consumer copies the numbers.
+
+Which body pairs a collision checker may skip is an `AllowedCollisionMatrix` (moveit_msgs'
+message plus the SRDF `<disable_collisions>` reason per pair).
 """
 
+from robot_msgs.manipulation.allowed_collision_matrix import (
+    REASONS,
+    AllowedCollisionMatrix,
+    allowed_collision_matrix_from_srdf,
+    allowed_collision_matrix_to_srdf,
+)
 from robot_msgs.manipulation.cartesian_limits import CartesianLimits
 from robot_msgs.manipulation.grasp_pose import GraspPose
 from robot_msgs.manipulation.named_pose import (
@@ -31,6 +40,8 @@ from robot_msgs.manipulation.waypoint_action import WaypointAction
 __all__ = [
     "LABELS",
     "NAMED_POSES_SCHEMA",
+    "REASONS",
+    "AllowedCollisionMatrix",
     "CartesianLimits",
     "GraspPose",
     "InverseKinematics",
@@ -38,6 +49,8 @@ __all__ = [
     "Waypoint",
     "WaypointAction",
     "WaypointLabel",
+    "allowed_collision_matrix_from_srdf",
+    "allowed_collision_matrix_to_srdf",
     "check_named_poses",
     "find_named_pose",
     "named_poses_from_json",

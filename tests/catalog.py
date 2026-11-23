@@ -41,7 +41,7 @@ from robot_msgs.geometry import (
     Vector3,
     Wrench,
 )
-from robot_msgs.manipulation import CartesianLimits, GraspPose, NamedPose, Waypoint, WaypointAction
+from robot_msgs.manipulation import AllowedCollisionMatrix, CartesianLimits, GraspPose, NamedPose, Waypoint, WaypointAction
 from robot_msgs.sensor import CameraInfo, Image, Imu, JointState, PointCloud
 from robot_msgs.shape import MeshResource, Plane, SolidPrimitive
 from robot_msgs.std import ColorRGBA, DiagnosticRecord, Header, LogRecord, Metrics
@@ -228,6 +228,12 @@ EXAMPLES = [
         header=HEADER.replace(frame_id="world"),
     ),
     CartesianLimits(max_linear_velocity=0.5, max_angular_jerk=math.inf),
+    AllowedCollisionMatrix.from_pairs(
+        ("base_link", "shoulder_link", "upper_arm_link", "forearm_link", "conveyor"),
+        [("base_link", "shoulder_link", "Adjacent"), ("base_link", "conveyor", "Default"),
+         ("shoulder_link", "forearm_link", "Never"), ("upper_arm_link", "conveyor")],
+        why="robot_collision fast, 10000 samples, seed 0",
+    ),
     NamedPose.from_degrees(
         name="ready",
         group="arm",

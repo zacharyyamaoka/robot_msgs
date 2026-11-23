@@ -62,6 +62,9 @@ UNMAPPED = {
     "WaypointAction",
     # a robot's saved position: SRDF <group_state> is a file entry, not a message (named_poses_to_srdf)
     "NamedPose",
+    # moveit_msgs/AllowedCollisionMatrix is not in the Jazzy typestore; its stock file form is the
+    # SRDF <disable_collisions> (allowed_collision_matrix_to_srdf)
+    "AllowedCollisionMatrix",
     # what a running component reports about itself: rcl_interfaces/Log has no step count (`tick`),
     # diagnostic_msgs/DiagnosticStatus no `code`, `mode` or UNKNOWN level, and ROS has no metrics
     # message. Not mapped yet.
