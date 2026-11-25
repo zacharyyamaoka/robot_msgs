@@ -20,7 +20,8 @@ Entity layout, shared with traj_compare's Rerun projection so the two overlay:
 ``<name>`` is the keyword you passed to `show`/`log` (``real``, ``target``), or the type name.
 A JointTrajectory with ``robot=`` adds its arm at ``/world/<name>/robot`` (Rerun's own URDF loader),
 its derived signals beside the stock ones (``/jerks/...``, ``/tcp/...``, ``/limit_pct/...``) and the
-playhead table at ``/notes/<name>`` (see "a JointTrajectory with its robot" below).
+playhead table at ``/notes/<name>`` (see "a JointTrajectory with its robot" below). With no URDF,
+`log_joint_tabs` + `joint_tabs_blueprint` give the same tabs without the arm.
 """
 
 from __future__ import annotations
@@ -634,7 +635,8 @@ def _tip_link(tree: Any, traj: JointTrajectory) -> str:
 
 def _limit_arrays(tree: Any, traj: JointTrajectory) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """Per short field, (low, high) per trajectory joint in SI (NaN = none): the message's JointLimits first, else the
-    URDF's (position and velocity; a URDF states no acceleration or jerk). A ``max_*`` bound is a magnitude."""
+    URDF's (position and velocity; a URDF states no acceleration or jerk). A ``max_*`` bound is a magnitude.
+    ``tree`` None (no URDF): the message's JointLimits alone."""
     names = [str(name) for name in traj.joint_names]
     count = len(names)
     out = {short: (np.full(count, np.nan), np.full(count, np.nan)) for short, *_ in _FIELDS}
@@ -649,16 +651,16 @@ def _limit_arrays(tree: Any, traj: JointTrajectory) -> dict[str, tuple[np.ndarra
         return value if np.isfinite(value) else np.nan
 
     for index, joint in enumerate(names):
-        urdf = tree.get_joint_by_name(joint)
+        urdf = None if tree is None else tree.get_joint_by_name(joint)
         low, high = given("min_position", joint), given("max_position", joint)
-        if (np.isnan(low) or np.isnan(high)) and urdf.joint_type in ("revolute", "prismatic") \
+        if (np.isnan(low) or np.isnan(high)) and urdf is not None and urdf.joint_type in ("revolute", "prismatic") \
                 and urdf.limit_lower < urdf.limit_upper:
             low = urdf.limit_lower if np.isnan(low) else low
             high = urdf.limit_upper if np.isnan(high) else high
         out["q"][0][index], out["q"][1][index] = low, high
         for short, field_name in (("qd", "max_velocity"), ("qdd", "max_acceleration"), ("qddd", "max_jerk")):
             bound = given(field_name, joint)
-            if short == "qd" and np.isnan(bound) and urdf.limit_velocity > 0:
+            if short == "qd" and np.isnan(bound) and urdf is not None and urdf.limit_velocity > 0:
                 bound = urdf.limit_velocity
             if bound > 0:
                 out[short][0][index], out[short][1][index] = -bound, bound
@@ -749,27 +751,20 @@ class _Strip:
         self.title, self.contents, self.y_range, self.legend = title, contents, y_range, legend
 
 
-class _RobotPlan:
-    """A JointTrajectory + its URDF, worked out once: what the logger writes where and how the dashboard frames it.
-    Pure: nothing is logged here, so the blueprint can be built (and written) before the data."""
+class _JointPlan:
+    """A JointTrajectory worked out once for the joint tabs (q, qd, qdd, qddd, q / qd / qdd) and the playhead table.
+    Pure: nothing is logged here. Without a URDF (`log_joint_tabs`) every joint reads as revolute (degrees: robot_msgs
+    carries no joint type, as ``degrees=True`` does) and the limits are the message's JointLimits alone; `_RobotPlan`
+    adds the URDF's joint types and limits, the arm, the tool and the TCP tab."""
 
-    def __init__(self, traj: JointTrajectory, name: str, robot: str | Path, tool: PoseTrajectory | None) -> None:
-        import rerun.urdf as rurdf
-
+    def __init__(self, traj: JointTrajectory, name: str, *, revolute: list[str] | None = None,
+                 limits: dict[str, tuple[np.ndarray, np.ndarray]] | None = None) -> None:  # fmt: skip
         self.name, self.part = name, _part(name)
-        self.urdf = Path(robot).expanduser().resolve()
-        tree = rurdf.UrdfTree.from_file_path(self.urdf)
-        self.robot_name = tree.name
         joints = [str(joint) for joint in traj.joint_names]
-        missing = [joint for joint in joints if tree.get_joint_by_name(joint) is None]
-        if missing:
-            known = sorted(joint.name for joint in tree.joints() if joint.joint_type != "fixed")
-            raise ValueError(f"{self.urdf.name} has no joint(s) {missing}; its joints: {known}")
         self.joints = joints
-        self.revolute = [j for j in joints if tree.get_joint_by_name(j).joint_type in ("revolute", "continuous")]
+        self.revolute = list(joints) if revolute is None else revolute
         t = np.asarray(traj.t, dtype=np.float64)
         self.seconds = t - (t[0] if t.size else 0.0)
-        self.values = _joint_values(tree, traj)
         self.scale = np.array([_DEG if joint in self.revolute else 1.0 for joint in joints])
 
         # the joint signals in SI, (N, J) each; a missing field stays missing (its tab is left out); the jerk is the
@@ -781,7 +776,7 @@ class _RobotPlan:
             "qdd": accelerations,
             "qddd": None if accelerations is None else _slope(accelerations, self.seconds),
         }
-        self.limits = _limit_arrays(tree, traj)
+        self.limits = _limit_arrays(None, traj) if limits is None else limits
         self.tabs: dict[str, list[_Strip]] = {}
         for short, tab, field_name, rate in _FIELDS:
             if self.signals[short] is not None:
@@ -789,57 +784,8 @@ class _RobotPlan:
         self.cards = self._cards()
         if self.cards:
             self.tabs["q / qd / qdd"] = self.cards
-
-        # the tool: the given PoseTrajectory in the link its header names, else the URDF's last link by FK
-        from robot_msgs.geometry.rotations import matrix_to_euler, quat_to_matrix
-
-        links = _forward_kinematics(tree, self.values, len(t))
-        root = tree.root_link().name
-        self.root = root
-        self.flange: np.ndarray | None = None  # the URDF's last link, when the tool sits beyond it (the stick)
-        if tool is not None:
-            frame = tool.header.frame_id or root
-            if frame not in links:
-                raise ValueError(f"the tool's header.frame_id {frame!r} is not a link of {self.urdf.name} "
-                                 f"(empty = its root link {root!r}); its links: {sorted(links)}")  # fmt: skip
-            self.tool_t = np.asarray(tool.t, dtype=np.float64) - (t[0] if t.size else 0.0)
-            self.tool_xyz = np.asarray(tool.positions, dtype=np.float64)
-            rotations = quat_to_matrix(np.asarray(tool.orientations, dtype=np.float64))
-            self.tool_frame, self.tool_label = frame, tool.child_frame_id or "tool"
-            source = f"tool PoseTrajectory {self.tool_label} in {frame}"
-            # WHY a stick from the flange (R1, R5): a URDF usually ends at the flange and the TCP sits further out (the
-            # UR5e's 145 mm tool); without it the tool point floats beside the wrist and reads as a frame bug
-            tip = links[_tip_link(tree, traj)][:, :3, 3]
-            if frame == root and len(self.tool_xyz) == len(tip) and len(tip) \
-                    and float(np.linalg.norm(self.tool_xyz - tip, axis=1).max()) > 0.001:
-                self.flange = tip
-        else:
-            tip = _tip_link(tree, traj)
-            self.tool_t, self.tool_xyz, rotations = self.seconds, links[tip][:, :3, 3], links[tip][:, :3, :3]
-            self.tool_frame, self.tool_label = root, tip
-            source = f"FK of {tip} in {root}"
-        speed = np.linalg.norm(_slope(self.tool_xyz, self.tool_t), axis=1) * 1000.0
-        rpy = matrix_to_euler(rotations)
-        self.tcp = {
-            "position_mm": self.tool_xyz * 1000.0,
-            # WHY unwrapped: a tool pointing down sits at roll ±180°, and the wrapped value flips sign every sample
-            "orientation_deg": np.degrees(np.unwrap(rpy, axis=0)),
-            "speed_mm_s": speed,
-            "angular_speed_deg_s": np.degrees(_angular_rate(rotations, self.tool_t)),
-        }
-        # WHY say where: near |pitch| = 90° roll and yaw trade off fast (gimbal lock) though the tool turns smoothly;
-        # every 3-angle set has such a place (tilt + yaw: pointing straight up), so the title names it instead
-        near = np.flatnonzero(np.abs(rpy[:, 1]) > np.radians(80.0)) if len(rpy) else np.zeros(0, dtype=int)
-        self.gimbal = (f" · near gimbal lock {self.tool_t[near[0]]:.2f}–{self.tool_t[near[-1]]:.2f} s" if near.size
-                       else "")  # fmt: skip
-        self.tabs["TCP"] = self._tcp_strips(source)
-
-        # the camera: every link origin at every sample, and the tool path (in the root frame; framing only)
-        mount = links[self.tool_frame][0] if self.tool_frame != root else np.eye(4)
-        tool_root = self.tool_xyz @ mount[:3, :3].T + mount[:3, 3]
-        self.eye = _eye(np.vstack([*(pose[:, :3, 3] for pose in links.values()), tool_root]))
-        length = float(np.linalg.norm(np.diff(self.tool_xyz, axis=0), axis=1).sum())
-        self.title = (f"{name} · {tree.name} · {self.seconds[-1]:.2f} s · {self.tool_label} path {length:.2f} m")
+        duration = float(self.seconds[-1]) if self.seconds.size else 0.0
+        self.title = f"{name} · {duration:.2f} s · {len(joints)} joints"
         self.tables = self._tables()
 
     def unit(self, index: int, rate: str) -> str:
@@ -916,19 +862,6 @@ class _RobotPlan:
             card.y_range = (-self.card_span, self.card_span)
         return cards
 
-    def _tcp_strips(self, source: str) -> list[_Strip]:
-        speed, angular = self.tcp["speed_mm_s"], self.tcp["angular_speed_deg_s"]
-        peak, turn = int(np.argmax(speed)), int(np.argmax(angular))
-        return [
-            _Strip(f"TCP position [mm] · x / y / z · {source}", [f"/tcp/position_mm/{self.part}"], legend=True),
-            _Strip(f"TCP orientation [°] · roll / pitch / yaw (ROS rpy, unwrapped){self.gimbal} · {source}",
-                   [f"/tcp/orientation_deg/{self.part}"], legend=True),
-            _Strip(f"TCP speed [mm/s] · peak {speed[peak]:.0f} at {self.tool_t[peak]:.2f} s · {source}",
-                   [f"/tcp/speed_mm_s/{self.part}"], _snap(0.0, max(float(speed.max()), 1.0))),
-            _Strip(f"TCP angular speed [°/s] · peak {angular[turn]:.0f} at {self.tool_t[turn]:.2f} s · {source}",
-                   [f"/tcp/angular_speed_deg_s/{self.part}"], _snap(0.0, max(float(angular.max()), 1.0))),
-        ]  # fmt: skip
-
     def _tables(self) -> tuple[np.ndarray, list[str]]:
         """R5's playhead table, one markdown document per instant (at most `_ROWS`): each joint's q, qd, qdd in degrees
         (metres for a prismatic joint, as its strips) and its worst % of limit, with which quantity it is."""
@@ -966,6 +899,92 @@ class _RobotPlan:
                 lines.append(f"| {_short_joint(joint)} | " + " | ".join(cells) + f"{scale} | {text} |")
             tables.append("\n".join(lines))
         return self.seconds[np.asarray(picked, dtype=int)], tables
+
+
+class _RobotPlan(_JointPlan):
+    """A JointTrajectory + its URDF, worked out once: what the logger writes where and how the dashboard frames it.
+    Pure: nothing is logged here, so the blueprint can be built (and written) before the data. The joint tabs are
+    `_JointPlan`'s, with the URDF's joint types (degrees for revolute joints only) and its limits under the message's."""
+
+    def __init__(self, traj: JointTrajectory, name: str, robot: str | Path, tool: PoseTrajectory | None) -> None:
+        import rerun.urdf as rurdf
+
+        self.urdf = Path(robot).expanduser().resolve()
+        tree = rurdf.UrdfTree.from_file_path(self.urdf)
+        self.robot_name = tree.name
+        joints = [str(joint) for joint in traj.joint_names]
+        missing = [joint for joint in joints if tree.get_joint_by_name(joint) is None]
+        if missing:
+            known = sorted(joint.name for joint in tree.joints() if joint.joint_type != "fixed")
+            raise ValueError(f"{self.urdf.name} has no joint(s) {missing}; its joints: {known}")
+        revolute = [j for j in joints if tree.get_joint_by_name(j).joint_type in ("revolute", "continuous")]
+        super().__init__(traj, name, revolute=revolute, limits=_limit_arrays(tree, traj))
+        t = np.asarray(traj.t, dtype=np.float64)
+        self.values = _joint_values(tree, traj)
+
+        # the tool: the given PoseTrajectory in the link its header names, else the URDF's last link by FK
+        from robot_msgs.geometry.rotations import matrix_to_euler, quat_to_matrix
+
+        links = _forward_kinematics(tree, self.values, len(t))
+        root = tree.root_link().name
+        self.root = root
+        self.flange: np.ndarray | None = None  # the URDF's last link, when the tool sits beyond it (the stick)
+        if tool is not None:
+            frame = tool.header.frame_id or root
+            if frame not in links:
+                raise ValueError(f"the tool's header.frame_id {frame!r} is not a link of {self.urdf.name} "
+                                 f"(empty = its root link {root!r}); its links: {sorted(links)}")  # fmt: skip
+            self.tool_t = np.asarray(tool.t, dtype=np.float64) - (t[0] if t.size else 0.0)
+            self.tool_xyz = np.asarray(tool.positions, dtype=np.float64)
+            rotations = quat_to_matrix(np.asarray(tool.orientations, dtype=np.float64))
+            self.tool_frame, self.tool_label = frame, tool.child_frame_id or "tool"
+            source = f"tool PoseTrajectory {self.tool_label} in {frame}"
+            # WHY a stick from the flange (R1, R5): a URDF usually ends at the flange and the TCP sits further out (the
+            # UR5e's 145 mm tool); without it the tool point floats beside the wrist and reads as a frame bug
+            tip = links[_tip_link(tree, traj)][:, :3, 3]
+            if frame == root and len(self.tool_xyz) == len(tip) and len(tip) \
+                    and float(np.linalg.norm(self.tool_xyz - tip, axis=1).max()) > 0.001:
+                self.flange = tip
+        else:
+            tip = _tip_link(tree, traj)
+            self.tool_t, self.tool_xyz, rotations = self.seconds, links[tip][:, :3, 3], links[tip][:, :3, :3]
+            self.tool_frame, self.tool_label = root, tip
+            source = f"FK of {tip} in {root}"
+        speed = np.linalg.norm(_slope(self.tool_xyz, self.tool_t), axis=1) * 1000.0
+        rpy = matrix_to_euler(rotations)
+        self.tcp = {
+            "position_mm": self.tool_xyz * 1000.0,
+            # WHY unwrapped: a tool pointing down sits at roll ±180°, and the wrapped value flips sign every sample
+            "orientation_deg": np.degrees(np.unwrap(rpy, axis=0)),
+            "speed_mm_s": speed,
+            "angular_speed_deg_s": np.degrees(_angular_rate(rotations, self.tool_t)),
+        }
+        # WHY say where: near |pitch| = 90° roll and yaw trade off fast (gimbal lock) though the tool turns smoothly;
+        # every 3-angle set has such a place (tilt + yaw: pointing straight up), so the title names it instead
+        near = np.flatnonzero(np.abs(rpy[:, 1]) > np.radians(80.0)) if len(rpy) else np.zeros(0, dtype=int)
+        self.gimbal = (f" · near gimbal lock {self.tool_t[near[0]]:.2f}–{self.tool_t[near[-1]]:.2f} s" if near.size
+                       else "")  # fmt: skip
+        self.tabs["TCP"] = self._tcp_strips(source)
+
+        # the camera: every link origin at every sample, and the tool path (in the root frame; framing only)
+        mount = links[self.tool_frame][0] if self.tool_frame != root else np.eye(4)
+        tool_root = self.tool_xyz @ mount[:3, :3].T + mount[:3, 3]
+        self.eye = _eye(np.vstack([*(pose[:, :3, 3] for pose in links.values()), tool_root]))
+        length = float(np.linalg.norm(np.diff(self.tool_xyz, axis=0), axis=1).sum())
+        self.title = (f"{name} · {tree.name} · {self.seconds[-1]:.2f} s · {self.tool_label} path {length:.2f} m")
+
+    def _tcp_strips(self, source: str) -> list[_Strip]:
+        speed, angular = self.tcp["speed_mm_s"], self.tcp["angular_speed_deg_s"]
+        peak, turn = int(np.argmax(speed)), int(np.argmax(angular))
+        return [
+            _Strip(f"TCP position [mm] · x / y / z · {source}", [f"/tcp/position_mm/{self.part}"], legend=True),
+            _Strip(f"TCP orientation [°] · roll / pitch / yaw (ROS rpy, unwrapped){self.gimbal} · {source}",
+                   [f"/tcp/orientation_deg/{self.part}"], legend=True),
+            _Strip(f"TCP speed [mm/s] · peak {speed[peak]:.0f} at {self.tool_t[peak]:.2f} s · {source}",
+                   [f"/tcp/speed_mm_s/{self.part}"], _snap(0.0, max(float(speed.max()), 1.0))),
+            _Strip(f"TCP angular speed [°/s] · peak {angular[turn]:.0f} at {self.tool_t[turn]:.2f} s · {source}",
+                   [f"/tcp/angular_speed_deg_s/{self.part}"], _snap(0.0, max(float(angular.max()), 1.0))),
+        ]  # fmt: skip
 
 
 def _robot_plan(traj: JointTrajectory, name: str, robot: str | Path, tool: PoseTrajectory | None) -> _RobotPlan:
@@ -1033,8 +1052,8 @@ def _urdf_copy(plan: _RobotPlan, recording: rr.RecordingStream, copy: str, colou
     return tree
 
 
-def _log_robot(traj: JointTrajectory, plan: _RobotPlan, recording: rr.RecordingStream, *, ghosts: bool) -> None:
-    """Log one JointTrajectory with its robot (see the section's entity layout)."""
+def _log_joint_signals(traj: JointTrajectory, plan: _JointPlan, recording: rr.RecordingStream) -> None:
+    """The joint tabs' data (steps 1-3 of `_log_robot`): the stock series, the jerk, the limit lines, the cards."""
     part, seconds = plan.part, plan.seconds
     on_t = [rr.TimeColumn(TIMELINE, duration=seconds)]
 
@@ -1070,6 +1089,22 @@ def _log_robot(traj: JointTrajectory, plan: _RobotPlan, recording: rr.RecordingS
         band(f"{entity}/limit", [0.0, float(seconds[-1])], -100.0, 100.0, recording=recording, color=_CARD_BAND,
              name="limit ±100 %")
 
+
+def _log_playhead_table(plan: _JointPlan, recording: rr.RecordingStream) -> None:
+    """Step 5 of `_log_robot`: the playhead table, one markdown document per instant (latest-at holds it until the next)."""
+    table_t, tables = plan.tables
+    recording.send_columns(f"/notes/{plan.part}", indexes=[rr.TimeColumn(TIMELINE, duration=table_t)],
+                           columns=rr.TextDocument.columns(text=tables, media_type=["text/markdown"] * len(tables)))
+
+
+def _log_robot(traj: JointTrajectory, plan: _RobotPlan, recording: rr.RecordingStream, *, ghosts: bool) -> None:
+    """Log one JointTrajectory with its robot (see the section's entity layout)."""
+    part, seconds = plan.part, plan.seconds
+    on_t = [rr.TimeColumn(TIMELINE, duration=seconds)]
+
+    # 1-3. the stock series and the jerk, the limit lines, the cards
+    _log_joint_signals(traj, plan, recording)
+
     # 4. the TCP: position and orientation, each one entity whose three instances are its axes (so the legend reads
     #    x, y, z and roll, pitch, yaw in that order: separate entities sort by path, pitch first), and its speeds
     tool_t = [rr.TimeColumn(TIMELINE, duration=plan.tool_t)]
@@ -1084,9 +1119,7 @@ def _log_robot(traj: JointTrajectory, plan: _RobotPlan, recording: rr.RecordingS
         recording.send_columns(entity, indexes=tool_t, columns=rr.Scalars.columns(scalars=plan.tcp[group]))
 
     # 5. the playhead table: one markdown document per instant (latest-at holds it until the next)
-    table_t, tables = plan.tables
-    recording.send_columns(f"/notes/{part}", indexes=[rr.TimeColumn(TIMELINE, duration=table_t)],
-                           columns=rr.TextDocument.columns(text=tables, media_type=["text/markdown"] * len(tables)))
+    _log_playhead_table(plan, recording)
 
     # 6. the arm: Rerun's URDF loader, every joint one transform entity (moving joints on t, the rest static)
     copies = [("robot", None, _ARM)] + ([("ghost_start", 0, _GHOST_START), ("ghost_end", -1, _GHOST_END)] if ghosts else [])
@@ -1131,24 +1164,26 @@ def _log_robot(traj: JointTrajectory, plan: _RobotPlan, recording: rr.RecordingS
                   frame, static=True)  # fmt: skip
 
 
-def _robot_dashboard(plan: _RobotPlan, *, ghosts: bool = True) -> Any:
-    """The page split in half: the arm on the left, always; tabs of plots on the right, q open (see the section)."""
+def _plot_view(strip: _Strip) -> Any:
+    """One strip as a time-series view: its own entities on its own y range, the time axis linked to every other."""
     import rerun.blueprint as rrb
 
-    title = plan.title + (" · ghosts: blue = start, orange = end" if ghosts else "")
-    world = rrb.Spatial3DView(origin="/", contents=[f"/world/{plan.part}/**"], name=title, eye_controls=plan.eye)
+    axis_y = rrb.ScalarAxis(range=strip.y_range, zoom_lock=False) if strip.y_range else None
+    return rrb.TimeSeriesView(
+        origin="/", contents=strip.contents, name=strip.title,
+        # WHY bottom right: a rest-to-rest motion ends quiet there (qd, qdd back to 0); at the top left the legend
+        # hid the first third of every card (R5's open issue, worse in half the width)
+        plot_legend=rrb.PlotLegend(visible=strip.legend, corner="RightBottom"),
+        axis_x=rrb.TimeAxis(link="LinkToGlobal"),  # zoom one plot's time, every plot follows
+        axis_y=axis_y,
+    )  # fmt: skip
 
-    def plot(strip: _Strip) -> Any:
-        axis_y = rrb.ScalarAxis(range=strip.y_range, zoom_lock=False) if strip.y_range else None
-        return rrb.TimeSeriesView(
-            origin="/", contents=strip.contents, name=strip.title,
-            # WHY bottom right: a rest-to-rest motion ends quiet there (qd, qdd back to 0); at the top left the legend
-            # hid the first third of every card (R5's open issue, worse in half the width)
-            plot_legend=rrb.PlotLegend(visible=strip.legend, corner="RightBottom"),
-            axis_x=rrb.TimeAxis(link="LinkToGlobal"),  # zoom one plot's time, every plot follows
-            axis_y=axis_y,
-        )  # fmt: skip
 
+def _tab_views(plan: _JointPlan) -> list[Any]:
+    """The plan's tabs as containers, in order (q, qd, qdd, qddd, q / qd / qdd, then TCP when there is a robot)."""
+    import rerun.blueprint as rrb
+
+    plot = _plot_view
     tabs = []
     for name, strips in plan.tabs.items():
         if name == "q / qd / qdd":
@@ -1161,6 +1196,16 @@ def _robot_dashboard(plan: _RobotPlan, *, ghosts: bool = True) -> Any:
                                      row_shares=[len(plan.joints) + 5, 8 * card_rows], name=name))  # fmt: skip
         else:
             tabs.append(rrb.Vertical(*(plot(s) for s in strips), name=name))
+    return tabs
+
+
+def _robot_dashboard(plan: _RobotPlan, *, ghosts: bool = True) -> Any:
+    """The page split in half: the arm on the left, always; tabs of plots on the right, q open (see the section)."""
+    import rerun.blueprint as rrb
+
+    title = plan.title + (" · ghosts: blue = start, orange = end" if ghosts else "")
+    world = rrb.Spatial3DView(origin="/", contents=[f"/world/{plan.part}/**"], name=title, eye_controls=plan.eye)
+    tabs = _tab_views(plan)
     return rrb.Blueprint(
         rrb.Horizontal(world, rrb.Tabs(*tabs, active_tab=0), column_shares=[1, 1]),
         rrb.BlueprintPanel(state="collapsed"),
@@ -1184,6 +1229,40 @@ def robot_blueprint(
     half: q, qd, qdd, qddd (a strip per joint in degrees with its limits), q / qd / qdd (each joint's three as % of its
     limits, under a table of the values at the playhead) and TCP. A tab whose data the message lacks is left out."""
     return _robot_dashboard(_robot_plan(traj, name or type(traj).__name__, robot, tool), ghosts=ghosts)
+
+
+# WHY (Zach, 2026-11-25): "when we are look at just a normal trajectory without comparison than I think it makes sense
+# to just keep with V1. that should basically just be the stock like robot msg viz viewer for a joint trajectory". A
+# trajectory with no URDF gets V1's right-hand tabs at full width. Two functions, not a new default: the stock logger's
+# output without robot= is frozen (tests/test_viz_rerun_stock_golden.py), and robot_msg_viz picks these up instead.
+
+
+def log_joint_tabs(traj: JointTrajectory, name: str | None = None, *, recording: rr.RecordingStream) -> None:
+    """The stock trajectory viewer's joint tabs, for a JointTrajectory with no URDF: what ``log(traj, robot=...)`` logs
+    for its q, qd, qdd, qddd and q / qd / qdd tabs (the series in degrees, the jerk, the limit lines, the % of limit
+    cards and the playhead table), without the arm and the TCP. robot_msgs carries no joint type, so every joint reads
+    as revolute (degrees, as ``degrees=True``); the limits are the message's JointLimits. Lay the recording out with
+    `joint_tabs_blueprint`."""
+    plan = _JointPlan(traj, name or type(traj).__name__)
+    _log_joint_signals(traj, plan, recording)
+    _log_playhead_table(plan, recording)
+
+
+def joint_tabs_blueprint(traj: JointTrajectory, name: str | None = None) -> Any:
+    """The layout of `log_joint_tabs`: the stock trajectory viewer's right-hand tabs at full width (q, qd, qdd, qddd:
+    a strip per joint in degrees with its limits; q / qd / qdd: each joint's three as % of its limits, under the
+    playhead table), q open, paused at t = 0. A tab whose data the message lacks is left out."""
+    import rerun.blueprint as rrb
+
+    plan = _JointPlan(traj, name or type(traj).__name__)
+    return rrb.Blueprint(
+        rrb.Tabs(*_tab_views(plan), active_tab=0, name=plan.title),
+        rrb.BlueprintPanel(state="collapsed"),
+        rrb.SelectionPanel(state="collapsed"),
+        # WHY paused, as `robot_blueprint`: the viewer opens at t = 0 and every still lands where it is asked
+        rrb.TimePanel(state="collapsed", timeline=TIMELINE, play_state="paused", loop_mode="all"),
+        collapse_panels=False,
+    )
 
 
 # ── geometry: a triad at a pose, an arrow for a vector ───────────────────────
@@ -1627,4 +1706,7 @@ def _(action: WaypointAction, name: str | None = None, *, recording: rr.Recordin
         _frame(f"{base}/{_part(w.name)}", [p.x, p.y, p.z], _xyzw(w.pose.orientation), recording)
 
 
-__all__ = ["APPLICATION_ID", "RERUN_SDK_VERSION", "TIMELINE", "log", "recording", "robot_blueprint", "save", "show"]
+__all__ = [
+    "APPLICATION_ID", "RERUN_SDK_VERSION", "TIMELINE", "joint_tabs_blueprint", "log", "log_joint_tabs", "recording",
+    "robot_blueprint", "save", "show",
+]  # fmt: skip

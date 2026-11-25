@@ -50,6 +50,9 @@ roll / pitch / yaw, speed, angular speed). It opens paused at t = 0, on q; play 
 - A tab whose data the message lacks is left out (no velocities: no qd, qdd, qddd).
 - `log(traj, name, recording=rec, robot=…, tool=…)` composes into your own recording, and
   `robot_blueprint(traj, name, robot=…)` is its layout. Without `robot=`, nothing changes.
+- No URDF? `log_joint_tabs(traj, name, recording=rec)` logs the same right-hand tabs (q, qd, qdd,
+  qddd, q / qd / qdd; every joint read as revolute) and `joint_tabs_blueprint(traj, name)` lays
+  them out at full width. robot_msg_viz's JointTrajectory view uses them.
 
 ## A trajectory is one entity with many views
 
