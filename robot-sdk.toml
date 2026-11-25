@@ -5,5 +5,13 @@ schema = "robot-sdk-declaration/1"
 role = "library"
 layer = "vocabulary"
 one_line = "Frozen numpy-backed message dataclasses every package joins on"
+summary = "The standard robot data types (ROS's geometry, sensor, trajectory and vision messages) as frozen Python dataclasses, *with* the functions between them: pose offsets, trajectory interpolation and resampling, point projection, depth to point cloud. `.show()` (Rerun) and `.plot()` (matplotlib) on every type. ROS 2 / bag export as an extra. Strict semver: additive changes only."
+use_when = "Any pose, transform, joint state, trajectory, limit, image or point cloud. **Never define your own Pose or Trajectory.**"
+
+# Where to read more. github and pypi are required; the rest are what this package has.
+[links]
+github = "https://github.com/zacharyyamaoka/robot_msgs"
+pypi = "https://pypi.org/project/robot-msgs/"
+site = "https://robotmsgs.com"
 
 # robot_msgs defines the shared types; it consumes and produces none of another package's.
