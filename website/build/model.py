@@ -341,7 +341,7 @@ def render_views(example: Any, plot: tuple[bytes, tuple[int, int]] | None) -> li
             continue
         with tempfile.TemporaryDirectory() as tmp:
             path = viewer.save(example, f"{tmp}/view{viewer.suffix}")
-            data = open(path, "rb").read()
+            data = Path(path).read_bytes()
         if viewer.name == "viser":
             # WHY base64 text: the shared viewer page loads it synchronously before Viser boots.
             views.append(ViewInfo(**common, data=base64.b64encode(data), suffix=".viser.b64"))

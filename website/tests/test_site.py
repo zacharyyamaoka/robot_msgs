@@ -26,7 +26,8 @@ def plain(path):
 
 
 def pages():
-    return sorted(DIST.rglob("*.html"))
+    """The site's own pages (vendored viewer pages under /assets/ are not ours)."""
+    return sorted(p for p in DIST.rglob("*.html") if "assets" not in p.relative_to(DIST).parts)
 
 
 class Site(unittest.TestCase):
@@ -74,10 +75,36 @@ class Site(unittest.TestCase):
             self.assertIn(repr(example), plain(self.page_for(cls)), cls.__name__)
 
     def test_plot_and_ros_sections(self):
-        self.assertIn('id="preview"', (DIST / "types/trajectory/JointTrajectory/index.html").read_text())
+        self.assertIn('id="visualize"', (DIST / "types/trajectory/JointTrajectory/index.html").read_text())
         pose = (DIST / "types/geometry/Pose/index.html").read_text()
         self.assertIn("geometry_msgs/msg/Pose", pose)
         self.assertIn("no ROS equivalent", (DIST / "types/trajectory/JointLimits/index.html").read_text())
+
+    def test_every_type_page_has_a_tab_per_registered_viewer(self):
+        from robot_msgs import viewers
+
+        for cls in self.types:
+            text = self.page_for(cls).read_text()
+            for name in viewers.VIEWERS:
+                self.assertIn(f'id="vt-{name}"', text, f"{cls.__name__}: no {name} tab")
+            # every view the page embeds is a file in dist
+            for ref in re.findall(r'data-(?:rrd|src)="(/[^"?]*)', text) + re.findall(r"scene=(/[^\"&]*)", text):
+                self.assertTrue((DIST / ref.lstrip("/")).is_file(), f"{cls.__name__}: {ref}")
+
+    def test_spatial_types_open_in_viser_and_rerun(self):
+        from robot_msgs.manipulation import GraspPose
+
+        text = self.page_for(GraspPose).read_text()
+        self.assertIn("/assets/viz/viser/manipulation-GraspPose.viser.b64", text)
+        self.assertIn("/assets/viz/rerun/manipulation-GraspPose.rrd", text)
+        self.assertTrue((DIST / "assets/viser/viewer.html").is_file())
+        self.assertIn("Access-Control-Allow-Origin", (DIST / "_headers").read_text())
+
+    def test_github_is_an_icon_in_the_top_bar(self):
+        text = (DIST / "types/index.html").read_text()
+        top = text[text.index('<header class="topbar">'):text.index("</header>")]
+        self.assertIn('class="icon-btn gh-btn"', top)
+        self.assertNotIn(">GitHub<", top.split('class="topnav"')[1].split("</nav>")[0])
 
     def test_related_types_both_directions(self):
         pose = (DIST / "types/geometry/Pose/index.html").read_text()
