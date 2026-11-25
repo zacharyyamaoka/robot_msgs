@@ -6,6 +6,7 @@ import html
 import re
 
 from highlight import highlight
+import used_by
 import robot_msgs
 from model import FnInfo, TypeInfo, domains_in, intro
 
@@ -500,6 +501,11 @@ def type_page(info: TypeInfo, types: list[TypeInfo], files: dict[str, str], **ct
     sections.append(
         f'<section aria-labelledby="related">{heading(2, "Related types", "related")}{related_html(info, by_key)}</section>'
     )
+
+    usage = used_by.section(used_by.graph(), info.domain, info.name)
+    if usage:
+        toc.append(("used-by-packages", "Used by packages", 2))
+        sections.append(usage)
 
     ros = (
         f'<span class="meta-k">ROS 2</span><code>{esc(info.ros_type)}</code>'
