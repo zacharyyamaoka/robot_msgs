@@ -161,6 +161,34 @@ def test_the_tool_path_without_a_tool_is_the_tip_from_the_urdf(tiny, tmp_path):
     assert "/world/plan/tool/stick" not in entities(path)  # the tool IS the tip: nothing to bridge
 
 
+def test_every_plotted_series_and_the_tool_path_show_a_dot_per_sample(tiny, tmp_path):
+    """WHY (Zach, 2026-11-25): "right now its just a continue line you cannot see like the time sample"."""
+    traj = tiny_trajectory(600)  # more samples than the tool polylines keep (_VERTICES): the dots keep every one
+    path = Path(viz_rerun.save(str(tmp_path / "arm.rrd"), plan=traj, robot=tiny))
+    series = [f"/{field}/{joint}/plan" for field in ("positions", "velocities", "accelerations", "jerks")
+              for joint in traj.joint_names] + [f"/tcp/{group}/plan" for group in
+                                                ("position_mm", "orientation_deg", "speed_mm_s", "angular_speed_deg_s")]
+    for entity in series:
+        line = rows(path, entity, "SeriesLines:names")
+        dots = rows(path, entity, "SeriesPoints:names")
+        assert dots and dots[0][1] == line[0][1], entity  # the same legend entry as its line
+        assert rows(path, entity, "SeriesPoints:markers")[0][1] == [1], entity  # a circle
+    samples = np.asarray(rows(path, "/world/plan/tool/samples", "Points3D:positions")[0][1])
+    np.testing.assert_allclose(samples, tiny_tip(np.asarray(traj.positions)), atol=1e-9)
+    assert len(np.asarray(rows(path, "/world/plan/tool/trail", "LineStrips3D:strips")[-1][1][0])) < len(samples)
+    # the limit lines and the cards stay lines
+    assert not rows(path, "/positions/elbow/lower_limit", "SeriesPoints:names")
+    # the URDF-free tabs share the path, so they get the dots too
+    import rerun as rr
+
+    stream = rr.RecordingStream("dots")
+    stream.save(str(tmp_path / "tabs.rrd"))
+    viz_rerun.log_joint_tabs(traj, "plan", recording=stream)
+    stream.flush()
+    stream.disconnect()
+    assert rows(tmp_path / "tabs.rrd", "/positions/elbow/plan", "SeriesPoints:names")
+
+
 def tabs_of(blueprint) -> dict[str, list]:
     """{tab name: its views} of the right half's Tabs."""
     _, right = blueprint.root_container.contents

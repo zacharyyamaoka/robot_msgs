@@ -48,6 +48,10 @@ roll / pitch / yaw, speed, angular speed). It opens paused at t = 0, on q; play 
 - `tool`'s `header.frame_id` names a URDF link (empty = the root link). Without `tool`, the tool
   is the URDF's last moving link, by forward kinematics.
 - A tab whose data the message lacks is left out (no velocities: no qd, qdd, qddd).
+- Every sample is a dot: each joint, jerk and TCP plot draws one per sample over its line (they
+  come apart as you zoom in), and the tool path has them as `/world/<name>/tool/samples`. Hide
+  the 3D ones with that entity's eye in the blueprint panel; in a plot, select the series and
+  remove SeriesPoints under Selection › Visualizers (**+** › SeriesPoints puts them back).
 - `log(traj, name, recording=rec, robot=…, tool=…)` composes into your own recording, and
   `robot_blueprint(traj, name, robot=…)` is its layout. Without `robot=`, nothing changes.
 - No URDF? `log_joint_tabs(traj, name, recording=rec)` logs the same right-hand tabs (q, qd, qdd,

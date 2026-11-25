@@ -498,6 +498,7 @@ def _(
 #     /notes/<name>                                        the playhead table, one per instant
 #     /world/<name>/robot|ghost_start|ghost_end/...        the URDF (Rerun's loader), frames prefixed <name>/
 #     /world/<name>/tool/trail|path|ends|stick             the tool path travelled, still to go, start / end; flange → TCP
+#     /world/<name>/tool/samples                           one dot per tool sample (the message's own clock)
 
 _DEG = 180.0 / np.pi
 # WHY calm (R3): one ink colour for every joint line (the strip's title names the joint), grey limits, and one accent
@@ -513,6 +514,12 @@ _LABEL_START = (90, 140, 230)
 _LABEL_END = (220, 120, 20)
 _STICK = (90, 90, 100)  # the flange-to-TCP stick
 _AXIS_COLORS = ((214, 62, 62), (52, 150, 72), (48, 98, 214))  # x / y / z (roll / pitch / yaw): Rerun's own axis colours
+# WHY sample dots (Zach, 2026-11-25: "right now its just a continue line you cannot see like the time sample"): every
+# plotted series also draws one dot per sample, same name and colour as its line (so the legend keeps one entry), small
+# enough to read as the line at full zoom (100 Hz over 5 s is ~1.4 px apart) and to come apart as soon as you zoom in.
+# The 3D tool path gets the same dots as their own entity, so its eye icon in the blueprint panel toggles them; in a plot,
+# the entity's Selection panel › Visualizers › SeriesPoints × takes them off (+ › SeriesPoints puts them back).
+_SAMPLE_DOT = 1.5  # UI points (a marker's radius), constant on screen whatever the zoom
 # the cards: q strong, qd a second hue (not the tool's orange: the two are unrelated), qdd quietest (the noisiest)
 _CARD_STYLE = {"q": ((38, 110, 214), 2.5), "qd": ((20, 150, 140), 1.6), "qdd": ((140, 140, 150), 1.0)}
 _CARD_BAND = (70, 160, 90, 60)  # ±100 %: a light band whose edges are the limits
@@ -1052,6 +1059,11 @@ def _urdf_copy(plan: _RobotPlan, recording: rr.RecordingStream, copy: str, colou
     return tree
 
 
+def _dots(names: Any, colors: Any) -> Any:
+    """The sample dots for one series entity: Rerun's SeriesPoints beside its SeriesLines (see `_SAMPLE_DOT`)."""
+    return rr.SeriesPoints(names=names, colors=colors, markers="circle", marker_sizes=_SAMPLE_DOT)
+
+
 def _log_joint_signals(traj: JointTrajectory, plan: _JointPlan, recording: rr.RecordingStream) -> None:
     """The joint tabs' data (steps 1-3 of `_log_robot`): the stock series, the jerk, the limit lines, the cards."""
     part, seconds = plan.part, plan.seconds
@@ -1060,10 +1072,16 @@ def _log_joint_signals(traj: JointTrajectory, plan: _JointPlan, recording: rr.Re
     # 1. the stock series: robot_msgs' own logger, degrees for the URDF's revolute joints (the message stays SI); the
     #    jerk beside them, in the same units per second
     _series(traj, plan.name, recording, degrees=plan.revolute, color=_INK, label=plan.name)
+    # WHY here and not in `_series`: `log` without `robot=` is frozen (tests/test_viz_rerun_stock_golden.py), so the
+    # dots join the stock series' entities from this path only (robot= and log_joint_tabs)
+    for short, _, field_name, _ in _FIELDS[:3]:
+        if plan.signals[short] is not None:
+            for joint in plan.joints:
+                recording.log(f"/{field_name}/{_part(joint)}/{part}", _dots(plan.name, _INK), static=True)
     if plan.signals["qddd"] is not None:
         for index, joint in enumerate(plan.joints):
             entity = f"/jerks/{_part(joint)}/{part}"
-            recording.log(entity, rr.SeriesLines(names=plan.name, colors=_INK), static=True)
+            recording.log(entity, rr.SeriesLines(names=plan.name, colors=_INK), _dots(plan.name, _INK), static=True)
             recording.send_columns(entity, indexes=on_t,
                                    columns=rr.Scalars.columns(scalars=plan.signals["qddd"][:, index] * plan.scale[index]))
 
@@ -1110,12 +1128,14 @@ def _log_robot(traj: JointTrajectory, plan: _RobotPlan, recording: rr.RecordingS
     tool_t = [rr.TimeColumn(TIMELINE, duration=plan.tool_t)]
     for group, axes in (("position_mm", ["x", "y", "z"]), ("orientation_deg", ["roll", "pitch", "yaw"])):
         entity = f"/tcp/{group}/{part}"
-        recording.log(entity, rr.SeriesLines(names=axes, colors=list(_AXIS_COLORS)), static=True)
+        recording.log(entity, rr.SeriesLines(names=axes, colors=list(_AXIS_COLORS)), _dots(axes, list(_AXIS_COLORS)),
+                      static=True)  # fmt: skip
         recording.send_columns(entity, indexes=tool_t, columns=rr.Scalars.columns(scalars=plan.tcp[group].reshape(-1))
                                .partition([3] * len(plan.tool_t)))  # fmt: skip
     for group, colour in (("speed_mm_s", _ACCENT), ("angular_speed_deg_s", _INK)):
         entity = f"/tcp/{group}/{part}"
-        recording.log(entity, rr.SeriesLines(names=group.split("_")[0], colors=colour, widths=1.6), static=True)
+        recording.log(entity, rr.SeriesLines(names=group.split("_")[0], colors=colour, widths=1.6),
+                      _dots(group.split("_")[0], colour), static=True)  # fmt: skip
         recording.send_columns(entity, indexes=tool_t, columns=rr.Scalars.columns(scalars=plan.tcp[group]))
 
     # 5. the playhead table: one markdown document per instant (latest-at holds it until the next)
@@ -1159,6 +1179,10 @@ def _log_robot(traj: JointTrajectory, plan: _RobotPlan, recording: rr.RecordingS
         recording.log(stick, rr.LineStrips3D.from_fields(colors=[_STICK], radii=[0.004]), frame, static=True)
         recording.send_columns(stick, indexes=at, columns=rr.LineStrips3D.columns(
             strips=[np.stack([plan.flange[row], xyz[row]]) for row in picked]))
+    # every sample of the tool path, as dots (see `_SAMPLE_DOT`): the polylines above are thinned to _VERTICES
+    recording.log(f"/world/{part}/tool/samples", rr.Points3D(xyz, colors=[_INK],
+                                                             radii=rr.components.Radius.ui_points(_SAMPLE_DOT)),
+                  frame, static=True)  # fmt: skip
     recording.log(f"/world/{part}/tool/ends", rr.Points3D([xyz[0], xyz[-1]], labels=["start", "end"],
                                                           colors=[_LABEL_START, _LABEL_END], radii=[0.009]),
                   frame, static=True)  # fmt: skip
