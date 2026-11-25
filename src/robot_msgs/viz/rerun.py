@@ -691,10 +691,14 @@ def _strip_range(values: np.ndarray, low: float, high: float) -> tuple[float, fl
     vmin, vmax = float(values.min()), float(values.max())
     span = max(vmax - vmin, 1e-9)
     lo, hi = vmin - 0.08 * span, vmax + 0.08 * span
+    # a limit within one motion span is the edge, the motion only where it goes past it. WHY no 8 %
+    # past a limit the motion reaches (2026-11-24): wrist_2 qd (179.7 of 180 °/s) snapped out to
+    # -236..436 with one '0' tick. WHY not a finer snap: Rerun labels powers of ten only, so a
+    # tighter range lost elbow qd's -100 / 100 labels.
     if np.isfinite(low) and vmin - low <= span:
-        lo = min(lo, low)
+        lo = min(vmin, low)
     if np.isfinite(high) and high - vmax <= span:
-        hi = max(hi, high)
+        hi = max(vmax, high)
     return _snap(lo, hi)
 
 
