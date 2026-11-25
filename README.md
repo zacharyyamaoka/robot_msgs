@@ -25,6 +25,32 @@ save("pick.rrd", target=planned, real=measured)       # open later with `rerun p
 `.show()` needs `pip install 'robot-msgs[rerun]'`; `.plot()` needs `[viz]`. Every message type
 has both; the core never imports either.
 
+### A JointTrajectory as its robot: `robot=`
+
+```python
+traj.show(robot="ur5e.urdf")                              # the arm, from the robot's own URDF
+traj.show(robot="ur5e.urdf", tool=tcp)                    # tcp: the tool's PoseTrajectory
+save("plan.rrd", plan=traj, robot="ur5e.urdf", tool=tcp)  # ghosts=False for a web bundle of many
+```
+
+The page is split in half. On the left, always: the URDF arm moving on the time bar (Rerun's own
+URDF loader), faint copies at its start (blue) and end (orange) poses, and the tool's path, solid
+up to the playhead and faint after it. On the right, tabs: **q**, **qd**, **qdd**, **qddd** (a
+plot per joint in degrees with its limit lines; the title gives its travel and distance to the
+limit, or its peak and % of limit; qddd is the slope of qdd), **q / qd / qdd** (each joint's three
+as % of its own limits under a table of the values at the playhead) and **TCP** (position,
+roll / pitch / yaw, speed, angular speed). It opens paused at t = 0, on q; play loops.
+
+- `robot` is a URDF path; robot_msgs gains no dependency (Rerun's `rerun.urdf` reads it). The
+  trajectory's joint names must be URDF joints. Revolute joints are shown in degrees, prismatic
+  ones in metres; the message itself stays SI.
+- Limits: the message's `JointLimits` first, else the URDF's (position, velocity).
+- `tool`'s `header.frame_id` names a URDF link (empty = the root link). Without `tool`, the tool
+  is the URDF's last moving link, by forward kinematics.
+- A tab whose data the message lacks is left out (no velocities: no qd, qdd, qddd).
+- `log(traj, name, recording=rec, robot=…, tool=…)` composes into your own recording, and
+  `robot_blueprint(traj, name, robot=…)` is its layout. Without `robot=`, nothing changes.
+
 ## A trajectory is one entity with many views
 
 ```python

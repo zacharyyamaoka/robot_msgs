@@ -33,8 +33,8 @@ class Viewer:
     show_code: str
     url: str
     _supports: Callable[[Any, type], bool]
-    _show: Callable[[Any, Any, str], Any]
-    _save: Callable[[Any, Any, str], str]
+    _show: Callable[..., Any]  # (module, msg, name, **options)
+    _save: Callable[..., str]  # (module, msg, path, **options)
 
     def load(self) -> Any:
         try:
@@ -54,11 +54,12 @@ class Viewer:
     def supports(self, message_type: type) -> bool:
         return self._supports(self.load(), message_type)
 
-    def show(self, msg: Any, name: str | None = None) -> Any:
-        return self._show(self.load(), msg, name or type(msg).__name__)
+    def show(self, msg: Any, name: str | None = None, **options: Any) -> Any:
+        """Open the view; ``options`` go to the tool's own ``show`` (Rerun: ``robot=``, ``tool=``)."""
+        return self._show(self.load(), msg, name or type(msg).__name__, **options)
 
-    def save(self, msg: Any, path: str) -> str:
-        return self._save(self.load(), msg, path)
+    def save(self, msg: Any, path: str, **options: Any) -> str:
+        return self._save(self.load(), msg, path, **options)
 
 
 VIEWERS: dict[str, Viewer] = {}
@@ -126,8 +127,8 @@ register(
         show_code='msg.show(viewer="rerun")',
         url="https://rerun.io",
         _supports=lambda module, message_type: True,
-        _show=lambda module, msg, name: module.show(**{name: msg}),
-        _save=lambda module, msg, path: module.save(path, **{type(msg).__name__: msg}),
+        _show=lambda module, msg, name, **options: module.show(**{name: msg}, **options),
+        _save=lambda module, msg, path, **options: module.save(path, **{type(msg).__name__: msg}, **options),
     )
 )
 register(

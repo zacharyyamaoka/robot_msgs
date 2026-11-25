@@ -195,15 +195,16 @@ class Msg:
     # WHY methods on the base (Zach, 2026-11-11): "type.show() and a visualisation just shows up".
     # Both import lazily, so the core stays numpy-only; the work lives in robot_msgs.viz.
 
-    def show(self, name: str | None = None, *, viewer: str = "rerun") -> Any:
+    def show(self, name: str | None = None, *, viewer: str = "rerun", **options: Any) -> Any:
         """Open this message in a viewer: ``"rerun"`` (default, 2-D + 3-D), ``"viser"`` (3-D) or
-        ``"matplotlib"``; `robot_msgs.viewers` lists them and how to add one.
+        ``"matplotlib"``; `robot_msgs.viewers` lists them and how to add one. ``options`` go to the
+        viewer: ``traj.show(robot="ur5e.urdf", tool=tcp)`` draws a JointTrajectory as its URDF arm.
 
         To overlay several, use ``robot_msgs.viz.rerun.show(target=a, real=b)``.
         """
         from robot_msgs import viewers
 
-        return viewers.get(viewer).show(self, name)
+        return viewers.get(viewer).show(self, name, **options)
 
     def plot(self, **options: Any) -> Any:
         """This message as a matplotlib figure, for reports and notebooks (``robot-msgs[viz]``)."""
