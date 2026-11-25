@@ -1,0 +1,9 @@
+# robot-sdk declaration: the shared types this package's public API takes (consumes) and gives (produces),
+# each with the symbols that are the contract. Checked against the code by robot_sdk's
+# `python -m tools.sdk_graph check` (docs/graph-schema.md in github.com/zacharyyamaoka/robot_sdk).
+schema = "robot-sdk-declaration/1"
+role = "library"
+layer = "vocabulary"
+one_line = "Frozen numpy-backed message dataclasses every package joins on"
+
+# robot_msgs defines the shared types; it consumes and produces none of another package's.
