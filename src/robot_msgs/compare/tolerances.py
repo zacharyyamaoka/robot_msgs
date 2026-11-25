@@ -16,7 +16,7 @@ from typing import Any, NamedTuple
 
 import numpy as np
 
-from robot_msgs._core import FrozenDict, Msg, from_dict, set_field
+from robot_msgs._core import FrozenDict, Msg, from_dict, set_field, time_tolerance
 from robot_msgs.compare._phases import in_goal_phase, split_phases
 from robot_msgs.compare.align import match_joints
 from robot_msgs.geometry.rotations import quat_conjugate, quat_multiply, quat_to_rotvec
@@ -592,7 +592,7 @@ class ToleranceMonitor:
         self._kind = kind or "joint"
         self._tolerances = tolerances
         self._end = float(end_time)
-        self._tolerance = 1e-9 * max(1.0, abs(self._end))
+        self._tolerance = time_tolerance(self._end)  # the same rule as `check`'s phases
         limits = _compile(tolerances, kind, tuple(joint_names or ()))
         self._judge = _Judge(tolerances, limits, self._end)
 

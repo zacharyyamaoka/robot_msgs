@@ -24,7 +24,16 @@ from typing import Any, ClassVar, Literal, TypeVar
 
 import numpy as np
 
-from robot_msgs._core import Array, FrozenDict, Msg, freeze_new, frozen_array, set_field, short_repr
+from robot_msgs._core import (
+    Array,
+    FrozenDict,
+    Msg,
+    freeze_new,
+    frozen_array,
+    set_field,
+    short_repr,
+    time_tolerance,
+)
 from robot_msgs.geometry.rotations import quat_slerp
 from robot_msgs.std import Header
 from robot_msgs.trajectory import time_repair
@@ -469,7 +478,7 @@ class Trajectory(Msg):
         self._require_samples()
         start, end = self.t[0], self.t[-1]
         if extrapolate == "raise":
-            tolerance = 1e-9 * max(1.0, abs(float(end)))
+            tolerance = time_tolerance(end)
             if times.min() < start - tolerance or times.max() > end + tolerance:
                 raise ValueError(
                     f"time outside [{start:.6g}, {end:.6g}] s; "

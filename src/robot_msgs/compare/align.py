@@ -6,6 +6,7 @@ from typing import TypeVar
 
 import numpy as np
 
+from robot_msgs._core import time_tolerance
 from robot_msgs.trajectory import JointTrajectory, Trajectory
 
 TrajectoryT = TypeVar("TrajectoryT", bound=Trajectory)
@@ -29,7 +30,7 @@ def align(
     """
     reference_times = reference.absolute_times
     measured_times = measured.absolute_times - float(time_offset_s)
-    tolerance = 1e-9 * max(1.0, float(np.max(np.abs(reference_times))))
+    tolerance = time_tolerance(np.max(np.abs(reference_times)))
     inside = (measured_times >= reference_times[0] - tolerance) & (
         measured_times <= reference_times[-1] + tolerance
     )

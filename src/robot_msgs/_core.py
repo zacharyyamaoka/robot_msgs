@@ -278,6 +278,17 @@ def short_repr(value: Any) -> str:
     return repr(value)
 
 
+def time_tolerance(magnitude: float) -> float:
+    """How far apart two instants on one clock can be and still be the same instant, in seconds.
+
+    One nanosecond (ROS time's resolution), or 8 float64 steps at `magnitude` (the largest |t| on
+    that clock) when those are coarser: 1.9e-6 s at an epoch stamp of 1.76e9 s.
+    WHY not ``1e-9 * |t|`` (the rule until 2026-11-24): relative to the clock's origin, it is 1.76 s
+    at an epoch stamp, so `check` began the goal phase 1.76 s early and passed a path breach.
+    """
+    return max(1e-9, 8.0 * float(np.spacing(abs(float(magnitude)))))
+
+
 def allclose(a: Any, b: Any, *, rtol: float = 1e-9, atol: float = 1e-12) -> bool:
     """Structural approximate equality for messages (same types, numbers within tolerance)."""
     if isinstance(a, Msg) or isinstance(b, Msg):

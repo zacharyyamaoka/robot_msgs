@@ -6,6 +6,7 @@ from typing import NamedTuple
 
 import numpy as np
 
+from robot_msgs._core import time_tolerance
 from robot_msgs.trajectory import Trajectory
 
 
@@ -46,7 +47,7 @@ def split_phases(
     """
     reference_times = reference.absolute_times
     start, end = float(reference_times[0]), float(reference_times[-1])
-    tolerance = 1e-9 * max(1.0, float(np.max(np.abs(reference_times))))
+    tolerance = time_tolerance(np.max(np.abs(reference_times)))
     tau = measured.absolute_times - float(time_offset_s)
     goal = in_goal_phase(tau, end, tolerance)
     path = (tau >= start - tolerance) & ~goal

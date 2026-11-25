@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from robot_msgs._core import FrozenDict, Msg, set_field
+from robot_msgs._core import FrozenDict, Msg, set_field, time_tolerance
 from robot_msgs.compare._dispatch import compare
 from robot_msgs.compare.align import match_joints
 from robot_msgs.compare.comparison import Comparison
@@ -114,7 +114,7 @@ def aggregate(
         runs = [run.select(reference.joint_names) for run in runs]
 
     reference_times = reference.absolute_times
-    tolerance = 1e-9 * max(1.0, float(np.max(np.abs(reference_times))))
+    tolerance = time_tolerance(np.max(np.abs(reference_times)))
     covered = np.ones(len(reference), dtype=bool)
     for run, offset in zip(runs, offsets, strict=True):
         run_times = run.absolute_times - offset
