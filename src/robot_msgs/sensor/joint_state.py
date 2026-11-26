@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from robot_msgs._core import Array, Msg, frozen_array, optional_array, set_field
 from robot_msgs.std import Header
@@ -67,3 +68,12 @@ class JointState(Msg):
             velocity=None if self.velocity is None else self.velocity[order],
             effort=None if self.effort is None else self.effort[order],
         )
+
+    def compare(self, measured: JointState) -> Any:
+        """`measured` against this one as the reference → a `robot_msgs.compare.Comparison`.
+
+        Values only (stamps ignored), as one-sample streams; see `robot_msgs.compare.compare`.
+        """
+        from robot_msgs.compare import compare
+
+        return compare(self, measured)

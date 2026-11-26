@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from robot_msgs._core import Array, Msg, optional_array, set_field
 from robot_msgs.geometry import Quaternion, Vector3
@@ -34,3 +35,12 @@ class Imu(Msg):
             if covariance is not None and covariance.shape != (3, 3):
                 raise ValueError(f"Imu.{name} must have shape (3, 3), got {covariance.shape}")
             set_field(self, name, covariance)
+
+    def compare(self, measured: Imu) -> Any:
+        """`measured` against this one as the reference → a `robot_msgs.compare.Comparison`.
+
+        Values only (stamps ignored), as one-sample streams; see `robot_msgs.compare.compare`.
+        """
+        from robot_msgs.compare import compare
+
+        return compare(self, measured)

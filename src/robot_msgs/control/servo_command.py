@@ -9,6 +9,7 @@ RobStride, CubeMars and Unitree motors. The driver converts SI gains into its bo
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -91,3 +92,12 @@ class ServoCommand(Msg):
             state_seq=state.seq,
             header=state.header.replace(stamp=stamp),
         )
+
+    def compare(self, measured: ServoCommand) -> Any:
+        """`measured` against this one as the reference → a `robot_msgs.compare.Comparison`.
+
+        Values only (stamps ignored), as one-sample streams; see `robot_msgs.compare.compare`.
+        """
+        from robot_msgs.compare import compare
+
+        return compare(self, measured)

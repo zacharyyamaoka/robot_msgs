@@ -9,6 +9,7 @@ a different command, so it gets its own type.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -79,3 +80,12 @@ class ServoState(Msg):
             effort=self.effort,
             header=self.header,
         )
+
+    def compare(self, measured: ServoState) -> Any:
+        """`measured` against this one as the reference → a `robot_msgs.compare.Comparison`.
+
+        Values only (stamps ignored), as one-sample streams; see `robot_msgs.compare.compare`.
+        """
+        from robot_msgs.compare import compare
+
+        return compare(self, measured)

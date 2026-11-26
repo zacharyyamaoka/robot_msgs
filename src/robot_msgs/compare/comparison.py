@@ -1,4 +1,4 @@
-"""Comparison: one trajectory measured against a reference — the error signal and its numbers."""
+"""Comparison: one message measured against a reference — the error signal and its numbers."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Any
 
 from robot_msgs._core import FrozenDict, Msg, set_field
 from robot_msgs.compare.error_stats import ErrorStats
+from robot_msgs.sensor import PointCloud
 from robot_msgs.trajectory import Trajectory
 
 
@@ -17,9 +18,15 @@ class Comparison(Msg):
 
     - `error` is a trajectory of the *same type* as the inputs, on the measured run's own
       samples, holding ``reference - measured`` (the ROS 2 controller-state convention): joint
-      error is a `JointTrajectory`, pose error a `PoseTrajectory`. Derived error forms (rotation
-      vector, lag, cross-track, …) ride along as `channels`. WHY one type, not a parallel
-      "error" schema: plots, resampling, slicing and serialisation already work on it.
+      error is a `JointTrajectory`, pose error a `PoseTrajectory`, servo-state error a
+      `ServoStateTrajectory`, and so on. Derived error forms (rotation vector, lag, cross-track,
+      …) ride along as `channels`. WHY one type, not a parallel "error" schema: plots,
+      resampling, slicing and serialisation already work on it. Two single messages
+      (`JointState`, `Imu`, `Image`, …) are compared as one-sample streams, so their error is a
+      one-sample trajectory too.
+    - The one exception is a `PointCloud` pair, which has no time axis: its `error` is the
+      measured `PointCloud` with a per-point ``distance`` channel (to the nearest reference
+      point). Code that needs a time series checks ``isinstance(c.error, Trajectory)``.
     - `metrics` maps a stable name (``"positions/j2"``, ``"position"``, ``"lag"``,
       ``"channels/closure_gap"``) to its `ErrorStats`.
     - `time_offset_s`, `dropped` and `coverage` record how the two were lined up, so a number is
@@ -28,16 +35,17 @@ class Comparison(Msg):
       fraction of the reference's duration the measured run covers.
     """
 
-    error: Trajectory
+    error: Trajectory | PointCloud
     metrics: Mapping[str, ErrorStats] = field(default_factory=dict)
     time_offset_s: float = 0.0
     dropped: int = 0
     coverage: float = 1.0
 
     def __post_init__(self) -> None:
-        if not isinstance(self.error, Trajectory):
+        if not isinstance(self.error, (Trajectory, PointCloud)):
             raise TypeError(
-                f"Comparison.error must be a Trajectory, got {type(self.error).__name__}"
+                "Comparison.error must be a Trajectory (or a PointCloud, for a cloud pair), "
+                f"got {type(self.error).__name__}"
             )
         for name, stats in self.metrics.items():
             if not isinstance(stats, ErrorStats):

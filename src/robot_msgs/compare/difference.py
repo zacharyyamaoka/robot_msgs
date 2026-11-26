@@ -8,13 +8,33 @@ from __future__ import annotations
 
 import numpy as np
 
+from robot_msgs._core import freeze_new
 from robot_msgs.geometry.rotations import quat_conjugate, quat_multiply, quat_to_rotvec
-from robot_msgs.trajectory import JointTrajectory, PoseTrajectory, Trajectory
+from robot_msgs.sensor import PointCloud
+from robot_msgs.trajectory import (
+    ImageTrajectory,
+    ImuTrajectory,
+    JointTrajectory,
+    PoseTrajectory,
+    ServoCommandTrajectory,
+    ServoStateTrajectory,
+    Trajectory,
+    WrenchTrajectory,
+)
 
 # Channels the pose error adds; a measured channel of the same name would be ambiguous.
 POSE_ERROR_CHANNELS = (
     "rotation_vector", "rotation_angle", "lag", "cross_track", "contour", "lag_time",
 )  # fmt: skip
+
+# Channels the IMU error adds (the orientation error's rotation vector, as the pose error's).
+ROTATION_ERROR_CHANNELS = ("rotation_vector", "rotation_angle")
+# Channels the servo-state error adds: 1.0 where the two fault codes differ, per servo.
+FAULT_MISMATCH = "fault_mismatch"
+# Per-frame channels the image error adds.
+IMAGE_ERROR_CHANNELS = ("mae", "rmse", "psnr")
+# The channel the point-cloud error adds to the measured cloud.
+CLOUD_DISTANCE = "distance"
 
 # Measured channels that describe the run's clock, not its tracking. WHY copied, not differenced:
 # a joint_trajectory_controller state records the speed-scaling factor; a scaled run's timing
@@ -163,6 +183,24 @@ def contour_errors(
     return contour, lag_time
 
 
+def rotation_error(
+    reference_orientations: np.ndarray, measured_orientations: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """``q_ref · q_meas⁻¹`` (the world-frame rotation taking the measured orientation to the
+    reference one) and that rotation as a rotation vector (axis × angle, angle in [0, π]).
+
+    Shared by every orientation error (`pose_error`, `imu_error`), so they cannot disagree.
+    """
+    rotation = quat_multiply(reference_orientations, quat_conjugate(measured_orientations))
+    return rotation, quat_to_rotvec(rotation)
+
+
+def _refuse_clash(measured: Trajectory, names: tuple[str, ...], what: str) -> None:
+    clash = sorted(set(names) & set(measured.channels))
+    if clash:
+        raise ValueError(f"measured channels {clash} would shadow the {what} error channels")
+
+
 def pose_error(
     reference_at: PoseTrajectory,
     measured: PoseTrajectory,
@@ -180,12 +218,9 @@ def pose_error(
       as `contour` because it needs the whole reference path, not just its values at the measured
       instants), plus every shared numeric channel.
     """
-    clash = sorted(set(POSE_ERROR_CHANNELS) & set(measured.channels))
-    if clash:
-        raise ValueError(f"measured channels {clash} would shadow the pose error channels")
+    _refuse_clash(measured, POSE_ERROR_CHANNELS, "pose")
     position_error = reference_at.positions - measured.positions
-    rotation = quat_multiply(reference_at.orientations, quat_conjugate(measured.orientations))
-    rotation_vector = quat_to_rotvec(rotation)
+    rotation, rotation_vector = rotation_error(reference_at.orientations, measured.orientations)
     channels = channel_errors(reference_at, measured)
     channels["rotation_vector"] = rotation_vector
     channels["rotation_angle"] = np.linalg.norm(rotation_vector, axis=1)
@@ -205,3 +240,185 @@ def pose_error(
         channels=channels,
         header=measured.header,
     )
+
+
+# ── recorded streams: servos, IMU, F/T, camera ───────────────────────────────
+
+
+def servo_state_error(
+    reference_at: ServoStateTrajectory, measured: ServoStateTrajectory
+) -> ServoStateTrajectory:
+    """Per-servo ``reference - measured`` for positions and whichever of velocities, effort,
+    temperature and voltage both sides carry; `reference_at` on `measured`'s servos and samples.
+
+    `fault` is a code, not a quantity: the measured run's codes are copied, never differenced, and
+    when both sides report faults the channel ``fault_mismatch`` ``(N, J)`` is 1.0 where the two
+    codes differ (else 0.0), so a plot shows where they disagree.
+    """
+    _refuse_clash(measured, (FAULT_MISMATCH,), "servo state")
+    channels = channel_errors(reference_at, measured)
+    if reference_at.fault is not None and measured.fault is not None:
+        channels[FAULT_MISMATCH] = (reference_at.fault != measured.fault).astype(np.float64)
+    return ServoStateTrajectory(
+        t=measured.t,
+        joint_names=measured.joint_names,
+        positions=reference_at.positions - measured.positions,
+        velocities=_minus(reference_at.velocities, measured.velocities),
+        effort=_minus(reference_at.effort, measured.effort),
+        temperature=_minus(reference_at.temperature, measured.temperature),
+        voltage=_minus(reference_at.voltage, measured.voltage),
+        fault=measured.fault,
+        channels=channels,
+        header=measured.header,
+    )
+
+
+def servo_command_error(
+    reference_at: ServoCommandTrajectory, measured: ServoCommandTrajectory
+) -> ServoCommandTrajectory:
+    """Per-servo ``reference - measured`` for positions and every optional target both carry
+    (a NaN "no target" stays NaN and is skipped by the statistics). The ``latency`` channel, when
+    both have it, is differenced like any shared float channel."""
+    return ServoCommandTrajectory(
+        t=measured.t,
+        joint_names=measured.joint_names,
+        positions=reference_at.positions - measured.positions,
+        velocities=_minus(reference_at.velocities, measured.velocities),
+        feedforward_effort=_minus(reference_at.feedforward_effort, measured.feedforward_effort),
+        stiffness=_minus(reference_at.stiffness, measured.stiffness),
+        damping=_minus(reference_at.damping, measured.damping),
+        max_effort=_minus(reference_at.max_effort, measured.max_effort),
+        channels=channel_errors(reference_at, measured),
+        header=measured.header,
+    )
+
+
+def imu_error(reference_at: ImuTrajectory, measured: ImuTrajectory) -> ImuTrajectory:
+    """IMU ``reference - measured`` in the IMU frame: `orientations` ``q_ref · q_meas⁻¹``
+    (`rotation_error`, the pose error's rule), rates and accelerations subtracted, and channels
+    ``rotation_vector`` / ``rotation_angle`` plus every shared numeric channel."""
+    _refuse_clash(measured, ROTATION_ERROR_CHANNELS, "IMU")
+    rotation, rotation_vector = rotation_error(reference_at.orientations, measured.orientations)
+    channels = channel_errors(reference_at, measured)
+    channels["rotation_vector"] = rotation_vector
+    channels["rotation_angle"] = np.linalg.norm(rotation_vector, axis=1)
+    return ImuTrajectory(
+        t=measured.t,
+        orientations=rotation,
+        angular_velocities=reference_at.angular_velocities - measured.angular_velocities,
+        linear_accelerations=reference_at.linear_accelerations - measured.linear_accelerations,
+        channels=channels,
+        header=measured.header,
+    )
+
+
+def wrench_error(reference_at: WrenchTrajectory, measured: WrenchTrajectory) -> WrenchTrajectory:
+    """Force and torque ``reference - measured``, in the measured frame, plus shared channels."""
+    return WrenchTrajectory(
+        t=measured.t,
+        forces=reference_at.forces - measured.forces,
+        torques=reference_at.torques - measured.torques,
+        channels=channel_errors(reference_at, measured),
+        header=measured.header,
+    )
+
+
+_ERROR_ENCODINGS = {1: "32FC1", 3: "32FC3", 4: "32FC4"}
+
+
+def image_error(reference_at: ImageTrajectory, measured: ImageTrajectory) -> ImageTrajectory:
+    """Frame ``reference - measured`` as float32, pixel by pixel; `reference_at` is the reference
+    frame held (the latest one at or before each measured frame, `align` with ``"hold"``).
+
+    - Frames must have the same encoding and shape; a mismatch raises rather than compare a
+      resized or channel-swapped picture.
+    - The error is in the input's pixel units (0–255 for 8-bit), except 16UC1 depth, which is
+      millimetres by ROS's convention: its error is in metres, as its 32FC1 encoding says (SI).
+      Its encoding is 32FC1 / 32FC3 / 32FC4 by channel count.
+    - Channels per frame: ``mae`` (mean |e|), ``rmse`` (√ mean e²) and, for integer inputs,
+      ``psnr`` (dB, ``10·log10(MAX² / MSE)``, MAX the dtype's largest value; +inf for a frame
+      equal to its reference), plus every shared numeric channel.
+    """
+    if reference_at.encoding != measured.encoding:
+        raise ValueError(
+            f"frames differ in encoding: reference {reference_at.encoding}, measured "
+            f"{measured.encoding}; convert one side first (rgb8 vs bgr8 is a channel swap)"
+        )
+    if reference_at.frame_shape != measured.frame_shape:
+        raise ValueError(
+            f"frames differ in shape: reference {reference_at.frame_shape}, "
+            f"measured {measured.frame_shape}; resize or crop one side first"
+        )
+    channels_in = 1 if measured.frames.ndim == 3 else measured.frames.shape[3]
+    _refuse_clash(measured, IMAGE_ERROR_CHANNELS, "image")
+    difference = reference_at.frames.astype(np.float32) - measured.frames.astype(np.float32)
+    if measured.encoding == "16UC1":
+        difference = difference / np.float32(1000.0)
+    per_frame = difference.reshape(len(difference), -1).astype(np.float64)
+    mse = np.mean(per_frame**2, axis=1)
+    channels = channel_errors(reference_at, measured)
+    channels["mae"] = np.mean(np.abs(per_frame), axis=1)
+    channels["rmse"] = np.sqrt(mse)
+    if measured.frames.dtype.kind in "iu" and measured.encoding != "16UC1":
+        peak = float(np.iinfo(measured.frames.dtype).max)
+        with np.errstate(divide="ignore"):
+            channels["psnr"] = 10.0 * np.log10(peak**2 / mse)
+    return ImageTrajectory(
+        t=measured.t,
+        encoding=_ERROR_ENCODINGS[channels_in],
+        frames=freeze_new(np.ascontiguousarray(difference, dtype=np.float32)),
+        channels=channels,
+        header=measured.header,
+    )
+
+
+# ── point clouds: no clock, nearest neighbours ───────────────────────────────
+
+_PAIRS_PER_CHUNK = 4_000_000
+
+
+def nearest_distances(query: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """Distance (m) from each `query` point ``(N, 3)`` to its nearest `target` point ``(M, 3)``.
+
+    Exact brute force in float64, chunked so no step holds more than 4 M point pairs (~100 MB).
+    Cost is O(N·M): 10 k × 10 k points takes under a second on one core (measured 2026-11-25),
+    50 k × 50 k some 20 s; past ~20 k points, downsample both clouds first
+    (`PointCloud.downsampled(voxel_size)`). WHY not a k-d tree: numpy is the only runtime
+    dependency (scipy's cKDTree is the test oracle).
+    """
+    query = np.asarray(query, dtype=np.float64)
+    target = np.asarray(target, dtype=np.float64)
+    target_norm = np.einsum("ij,ij->i", target, target)
+    out = np.empty(len(query))
+    chunk = max(1, _PAIRS_PER_CHUNK // max(len(target), 1))
+    for begin in range(0, len(query), chunk):
+        block = query[begin : begin + chunk]
+        # |q - p|² = |q|² - 2 q·p + |p|²; clipped at 0 (round-off), then refined exactly below
+        squared = np.einsum("ij,ij->i", block, block)[:, None] - 2.0 * block @ target.T
+        squared += target_norm[None, :]
+        nearest = np.argmin(squared, axis=1)
+        out[begin : begin + chunk] = np.linalg.norm(block - target[nearest], axis=1)
+    return out
+
+
+def cloud_error(reference: PointCloud, measured: PointCloud) -> tuple[PointCloud, np.ndarray]:
+    """The measured cloud with channel ``distance`` (m, measured → nearest reference point), and
+    the reverse distances (reference → nearest measured point) beside it.
+
+    Clouds have no clock, so nothing is aligned in time; both must be in one frame (a set
+    `header.frame_id` on both must match; transform one first).
+    """
+    if len(reference) == 0 or len(measured) == 0:
+        raise ValueError(
+            f"cannot compare an empty point cloud ({len(reference)} reference points, "
+            f"{len(measured)} measured)"
+        )
+    frames = (reference.header.frame_id, measured.header.frame_id)
+    if all(frames) and frames[0] != frames[1]:
+        raise ValueError(f"clouds are in different frames {frames}; transform one first")
+    if CLOUD_DISTANCE in measured.channels:
+        raise ValueError(f"measured channel {CLOUD_DISTANCE!r} would shadow the cloud error")
+    forward = nearest_distances(measured.points, reference.points)
+    reverse = nearest_distances(reference.points, measured.points)
+    error = measured.replace(channels={**measured.channels, CLOUD_DISTANCE: forward})
+    return error, reverse

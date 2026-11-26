@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -107,6 +108,14 @@ class PointCloud(Msg):
             points=self.points[index],
             channels={name: values[index] for name, values in self.channels.items()},
         )
+
+    def compare(self, measured: PointCloud) -> Any:
+        """`measured` against this cloud as the reference → a `robot_msgs.compare.Comparison`:
+        nearest-neighbour distances both ways (``distance``, ``distance_reverse``, ``chamfer``).
+        See `robot_msgs.compare.compare`."""
+        from robot_msgs.compare import compare
+
+        return compare(self, measured)
 
 
 def _as_corner(value: Array, name: str) -> Array:

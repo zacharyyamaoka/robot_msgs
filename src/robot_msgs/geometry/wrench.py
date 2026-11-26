@@ -50,3 +50,12 @@ class Wrench(Msg):
         return Wrench(self.force * scalar, self.torque * scalar)
 
     __rmul__ = __mul__
+
+    def compare(self, measured: Wrench) -> Any:
+        """`measured` against this one as the reference → a `robot_msgs.compare.Comparison`.
+
+        Force and torque, as one-sample streams; see `robot_msgs.compare.compare`.
+        """
+        from robot_msgs.compare import compare
+
+        return compare(self, measured)
