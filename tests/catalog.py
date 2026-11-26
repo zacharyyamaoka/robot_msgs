@@ -45,7 +45,16 @@ from robot_msgs.geometry import (
     Vector3,
     Wrench,
 )
-from robot_msgs.manipulation import AllowedCollisionMatrix, CartesianLimits, GraspPose, NamedPose, Waypoint, WaypointAction
+from robot_msgs.manipulation import (
+    AllowedCollisionMatrix,
+    CartesianLimits,
+    CollisionElement,
+    CollisionScene,
+    GraspPose,
+    NamedPose,
+    Waypoint,
+    WaypointAction,
+)
 from robot_msgs.sensor import CameraInfo, Image, Imu, JointState, PointCloud
 from robot_msgs.shape import MeshResource, Plane, SolidPrimitive
 from robot_msgs.std import ColorRGBA, DiagnosticRecord, Header, LogRecord, Metrics
@@ -332,6 +341,38 @@ EXAMPLES = [
         [("base_link", "shoulder_link", "Adjacent"), ("base_link", "conveyor", "Default"),
          ("shoulder_link", "forearm_link", "Never"), ("upper_arm_link", "conveyor")],
         why="robot_collision fast, 10000 samples, seed 0",
+    ),
+    CollisionElement(
+        id="glove",
+        source="object",
+        pose=Pose.from_xyz_rpy(0.1, 0.0, 0.62, 0.0, 0.0, 0.4),
+        primitives=(SolidPrimitive.box(0.20, 0.10, 0.03),),
+        primitive_poses=(Pose.identity(),),
+        motion="moving",
+        compliance="deformable",
+        margin=0.01,
+        label="glove",
+        why="detector box, 5 mm noise",
+    ),
+    CollisionScene(
+        name="conveyor cell",
+        elements=(
+            CollisionElement(id="floor", source="scene", planes=(Plane.from_point_normal((0, 0, 0), (0, 0, 1)),),
+                             plane_poses=(Pose.identity(),), label="concrete floor"),
+            CollisionElement(id="conveyor", source="scene", pose=Pose.from_xyz_rpy(0.0, 0.0, 0.3, 0, 0, 0),
+                             primitives=(SolidPrimitive.box(0.55, 2.4, 0.6),), primitive_poses=(Pose.identity(),),
+                             margin=0.005),
+            CollisionElement(id="bottle", source="object", pose=Pose.from_xyz_rpy(0.05, 0.3, 0.7, 0, 0, 0),
+                             primitives=(SolidPrimitive.cylinder(0.2, 0.04),), primitive_poses=(Pose.identity(),),
+                             motion="moving", compliance="deformable", margin=0.01, label="bottle"),
+            CollisionElement(id="forearm_link", source="self", link="forearm_link",
+                             pose=Pose.from_xyz_rpy(-0.3, 0.0, 1.0, 0, 1.2, 0),
+                             primitives=(SolidPrimitive.cylinder(0.39, 0.045),), primitive_poses=(Pose.identity(),),
+                             motion="moving"),
+        ),
+        robot_state=JointState(name=("shoulder", "elbow"), position=[0.1, -1.2]),
+        acm=AllowedCollisionMatrix.from_pairs(("floor", "conveyor", "forearm_link"), [("floor", "conveyor", "Adjacent")]),
+        why="v1: static scene + detected objects + self at q",
     ),
     NamedPose.from_degrees(
         name="ready",

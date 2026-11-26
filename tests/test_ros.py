@@ -83,6 +83,9 @@ UNMAPPED = {
     # moveit_msgs/AllowedCollisionMatrix is not in the Jazzy typestore; its stock file form is the
     # SRDF <disable_collisions> (allowed_collision_matrix_to_srdf)
     "AllowedCollisionMatrix",
+    # moveit_msgs/PlanningScene and CollisionObject are not in the Jazzy typestore either
+    "CollisionElement",
+    "CollisionScene",
     # what a running component reports about itself: rcl_interfaces/Log has no step count (`tick`),
     # diagnostic_msgs/DiagnosticStatus no `code`, `mode` or UNKNOWN level, and ROS has no metrics
     # message. Not mapped yet.
@@ -111,7 +114,7 @@ MAPPED = [m for m in EXAMPLES if type(m).__name__ not in UNMAPPED]
 
 def test_catalog_is_split_into_mapped_and_unmapped():
     assert {type(m).__name__ for m in EXAMPLES if type(m).__name__ in UNMAPPED} == UNMAPPED
-    assert len(MAPPED) + 56 == len(EXAMPLES)
+    assert len(MAPPED) + 58 == len(EXAMPLES)
 
 
 @pytest.mark.parametrize("msg", MAPPED, ids=lambda m: type(m).__name__)

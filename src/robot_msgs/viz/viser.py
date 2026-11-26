@@ -41,9 +41,9 @@ from robot_msgs.geometry import (
     Vector3,
     Wrench,
 )
-from robot_msgs.manipulation import GraspPose, Waypoint, WaypointAction
+from robot_msgs.manipulation import CollisionElement, CollisionScene, GraspPose, Waypoint, WaypointAction
 from robot_msgs.sensor import CameraInfo, Image, PointCloud
-from robot_msgs.shape import Mesh, SolidPrimitive
+from robot_msgs.shape import Mesh, Plane, SolidPrimitive
 from robot_msgs.trajectory import PoseTrajectory
 from robot_msgs.vision import BoundingBox3D, Detection3D, Detection3DArray
 
@@ -453,3 +453,55 @@ def html(*messages: Msg, dark_mode: bool = False, **named: Msg) -> str:
 
 
 __all__ = ["VISER_VERSION", "html", "log", "save", "scene", "show", "supports"]
+
+
+# A collision element's colour is its (motion, compliance) pair; robot_collision's scene viewer has
+# the full inspector, this is the quick look `scene.show(viewer="viser")` gives.
+ELEMENT_RGB = {
+    ("fixed", "rigid"): (100, 116, 139),
+    ("fixed", "deformable"): (20, 184, 166),
+    ("moving", "rigid"): (99, 102, 241),
+    ("moving", "deformable"): (236, 72, 153),
+}
+PLANE_HALF_WIDTH = 1.5  # m drawn of an infinite plane
+
+
+def _plane_mesh(plane: Plane) -> Mesh:
+    """A finite square of `plane` (half-width PLANE_HALF_WIDTH) centred on the point nearest the origin."""
+    n = plane.coef[:3] / np.linalg.norm(plane.coef[:3])
+    centre = -plane.coef[3] / np.linalg.norm(plane.coef[:3]) * n
+    u = np.cross(n, [1.0, 0.0, 0.0] if abs(n[0]) < 0.9 else [0.0, 1.0, 0.0])
+    u /= np.linalg.norm(u)
+    v = np.cross(n, u)
+    w = PLANE_HALF_WIDTH
+    corners = [centre + a * w * u + b * w * v for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    return Mesh(vertices=np.array(corners), triangles=[[0, 1, 2], [0, 2, 3]])
+
+
+def _element(server, base: str, element: CollisionElement) -> None:
+    rgb = ELEMENT_RGB[(element.motion, element.compliance)]
+    for k, (shape, pose) in enumerate(element.shapes()):
+        mesh = _plane_mesh(shape) if isinstance(shape, Plane) else (
+            shape.to_mesh() if isinstance(shape, SolidPrimitive) else shape)
+        vertices = np.asarray(mesh.vertices) @ pose[:3, :3].T + pose[:3, 3]
+        _note(vertices)
+        server.scene.add_mesh_simple(f"{base}/shape_{k}", vertices=vertices.astype(np.float32),
+                                     faces=np.asarray(mesh.triangles, dtype=np.uint32), color=rgb,
+                                     side="double" if isinstance(shape, Plane) else "front")
+    server.scene.add_label(f"{base}/label", element.label or element.id,
+                           position=_xyz(element.pose.position))
+
+
+@log.register
+def _(element: CollisionElement, name: str | None = None, *, server: viser.ViserServer) -> None:
+    _element(server, f"/{_part(name or element.id)}", element)
+
+
+@log.register
+def _(scene: CollisionScene, name: str | None = None, *, server: viser.ViserServer) -> None:
+    base = f"/{_part(name or scene.name or 'CollisionScene')}"
+    if not scene.elements:
+        server.scene.add_label(f"{base}/empty", "empty collision scene", position=(0.0, 0.0, 0.0))
+        _note([(0.0, 0.0, 0.0)])
+    for element in scene.elements:
+        _element(server, f"{base}/{_part(element.id)}", element)

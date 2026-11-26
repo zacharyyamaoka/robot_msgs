@@ -9,7 +9,9 @@ A robot's saved positions are `NamedPose`s ("ready", "home"): MoveIt's SRDF `<gr
 up by name (`find_named_pose`) so no consumer copies the numbers.
 
 Which body pairs a collision checker may skip is an `AllowedCollisionMatrix` (moveit_msgs'
-message plus the SRDF `<disable_collisions>` reason per pair).
+message plus the SRDF `<disable_collisions>` reason per pair). Everything a planner must not hit is a
+`CollisionScene` of `CollisionElement`s (moveit_msgs' PlanningScene / CollisionObject, each element
+tagged scene | object | self, fixed | moving, rigid | deformable, with a margin and a contact policy).
 """
 
 from robot_msgs.manipulation.allowed_collision_matrix import (
@@ -19,6 +21,14 @@ from robot_msgs.manipulation.allowed_collision_matrix import (
     allowed_collision_matrix_to_srdf,
 )
 from robot_msgs.manipulation.cartesian_limits import CartesianLimits
+from robot_msgs.manipulation.collision_scene import (
+    COMPLIANCES,
+    CONTACT_POLICIES,
+    MOTIONS,
+    SOURCES,
+    CollisionElement,
+    CollisionScene,
+)
 from robot_msgs.manipulation.grasp_pose import GraspPose
 from robot_msgs.manipulation.named_pose import (
     NAMED_POSES_SCHEMA,
@@ -38,11 +48,17 @@ from robot_msgs.manipulation.waypoint import LABELS, Waypoint, WaypointLabel
 from robot_msgs.manipulation.waypoint_action import WaypointAction
 
 __all__ = [
+    "COMPLIANCES",
+    "CONTACT_POLICIES",
     "LABELS",
+    "MOTIONS",
     "NAMED_POSES_SCHEMA",
     "REASONS",
+    "SOURCES",
     "AllowedCollisionMatrix",
     "CartesianLimits",
+    "CollisionElement",
+    "CollisionScene",
     "GraspPose",
     "InverseKinematics",
     "NamedPose",
