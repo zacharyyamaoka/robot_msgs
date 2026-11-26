@@ -7,6 +7,7 @@ Import types from their domain, like ROS packages::
     from robot_msgs.trajectory import JointTrajectory
     from robot_msgs.control import ServoState, ServoCommand
     from robot_msgs.manipulation import GraspPose, WaypointAction
+    from robot_msgs.fiducial import FiducialArray, FiducialMap
     from robot_msgs.std import LogRecord, DiagnosticRecord, Metrics
 
 `robot_msgs.adopt(array)` hands a numpy array over without a copy (a view of a received buffer).
@@ -16,6 +17,7 @@ from robot_msgs import (
     compare,
     control,
     coverage,
+    fiducial,
     geometry,
     manipulation,
     sensor,
@@ -36,12 +38,13 @@ from robot_msgs._core import (
     to_dict,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "compare",
     "control",
     "coverage",
+    "fiducial",
     "Msg",
     "adopt",
     "allclose",

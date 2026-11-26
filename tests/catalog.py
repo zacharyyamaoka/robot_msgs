@@ -21,6 +21,7 @@ from robot_msgs.compare import (
     goal,
 )
 from robot_msgs.control import (
+    EffortStall,
     Elapsed,
     JointCommand,
     JointCommandSequence,
@@ -29,8 +30,17 @@ from robot_msgs.control import (
     ServoCommand,
     ServoState,
     Settled,
-    EffortStall,
     Stall,
+)
+from robot_msgs.fiducial import (
+    FiducialArray,
+    FiducialBoard,
+    FiducialDetection,
+    FiducialMap,
+    FiducialMount,
+    FiducialPose,
+    FiducialTrack,
+    FiducialTrackArray,
 )
 from robot_msgs.geometry import (
     Accel,
@@ -216,7 +226,60 @@ DATASET_COMPARISON = compare_dataset(DATASET)
 
 L_PRISM = SolidPrimitive.prism(0.4, [(0, 0), (2, 0), (2, 1), (1, 1), (1, 2), (0, 2)])
 
+FIDUCIAL_DETECTION = FiducialDetection(
+    id=7,
+    dictionary="DICT_4X4_50",
+    corners=[[600.5, 300.25], [680.0, 302.0], [678.5, 381.0], [598.0, 379.5]],
+    marker_length=0.0275,
+    decision_margin=41.5,
+    hamming=0,
+).with_corner_sigma(0.3)
+FIDUCIAL_POSE = FiducialPose.from_candidates(
+    7, "DICT_4X4_50", [POSE, Pose.from_xyz_rpy(0.4, -0.1, 0.25, 0.0, 0.0, 0.0)], [0.42, 0.61]
+).replace(covariance=np.diag([1e-6, 1e-6, 4e-6, 1e-4, 1e-4, 1e-5]))
+FIDUCIAL_MOUNT = FiducialMount(
+    id=7,
+    dictionary="DICT_4X4_50",
+    marker_length=0.0275,
+    pose=Pose.from_xyz_rpy(0.0, 0.03, 0.05, np.pi / 2, 0.0, 0.0),
+    covariance=np.diag([1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4]),
+    header=Header(frame_id="link_6", meta={"source": "cad"}),
+)
+FIDUCIAL_BOARD = FiducialBoard(
+    layout="charuco",
+    dictionary="DICT_4X4_50",
+    cols=3,
+    rows=3,
+    marker_length=0.017,
+    square_length=0.023,
+    header=Header(frame_id="wrist_board"),
+)
+
 EXAMPLES = [
+    FIDUCIAL_DETECTION,
+    FIDUCIAL_POSE,
+    FiducialArray(header=HEADER, detections=(FIDUCIAL_DETECTION,), poses=(FIDUCIAL_POSE,)),
+    FIDUCIAL_MOUNT,
+    FiducialMap(mounts=(FIDUCIAL_MOUNT,) + FIDUCIAL_BOARD.mounts().mounts),
+    FIDUCIAL_BOARD,
+    FiducialTrack(
+        id=7,
+        dictionary="DICT_4X4_50",
+        pose=POSE,
+        covariance=np.eye(6) * 1e-6,
+        observed=True,
+        last_seen=1_761_600_000.25,
+        nis=3.2,
+    ),
+    FiducialTrackArray(
+        header=Header(stamp=1_761_600_000.25, frame_id="base_link"),
+        tracks=(
+            FiducialTrack(
+                id=7, dictionary="DICT_4X4_50", pose=POSE, observed=True, last_seen=1_761_600_000.25
+            ),
+            FiducialTrack(id=8, dictionary="DICT_4X4_50", pose=POSE, last_seen=1_761_599_999.0),
+        ),
+    ),
     HEADER,
     ColorRGBA(0.5, 0.25, 0.75, 1.0),
     LogRecord(
@@ -338,8 +401,12 @@ EXAMPLES = [
     CartesianLimits(max_linear_velocity=0.5, max_angular_jerk=math.inf),
     AllowedCollisionMatrix.from_pairs(
         ("base_link", "shoulder_link", "upper_arm_link", "forearm_link", "conveyor"),
-        [("base_link", "shoulder_link", "Adjacent"), ("base_link", "conveyor", "Default"),
-         ("shoulder_link", "forearm_link", "Never"), ("upper_arm_link", "conveyor")],
+        [
+            ("base_link", "shoulder_link", "Adjacent"),
+            ("base_link", "conveyor", "Default"),
+            ("shoulder_link", "forearm_link", "Never"),
+            ("upper_arm_link", "conveyor"),
+        ],
         why="robot_collision fast, 10000 samples, seed 0",
     ),
     CollisionElement(
@@ -357,21 +424,46 @@ EXAMPLES = [
     CollisionScene(
         name="conveyor cell",
         elements=(
-            CollisionElement(id="floor", source="scene", planes=(Plane.from_point_normal((0, 0, 0), (0, 0, 1)),),
-                             plane_poses=(Pose.identity(),), label="concrete floor"),
-            CollisionElement(id="conveyor", source="scene", pose=Pose.from_xyz_rpy(0.0, 0.0, 0.3, 0, 0, 0),
-                             primitives=(SolidPrimitive.box(0.55, 2.4, 0.6),), primitive_poses=(Pose.identity(),),
-                             margin=0.005),
-            CollisionElement(id="bottle", source="object", pose=Pose.from_xyz_rpy(0.05, 0.3, 0.7, 0, 0, 0),
-                             primitives=(SolidPrimitive.cylinder(0.2, 0.04),), primitive_poses=(Pose.identity(),),
-                             motion="moving", compliance="deformable", margin=0.01, label="bottle"),
-            CollisionElement(id="forearm_link", source="self", link="forearm_link",
-                             pose=Pose.from_xyz_rpy(-0.3, 0.0, 1.0, 0, 1.2, 0),
-                             primitives=(SolidPrimitive.cylinder(0.39, 0.045),), primitive_poses=(Pose.identity(),),
-                             motion="moving"),
+            CollisionElement(
+                id="floor",
+                source="scene",
+                planes=(Plane.from_point_normal((0, 0, 0), (0, 0, 1)),),
+                plane_poses=(Pose.identity(),),
+                label="concrete floor",
+            ),
+            CollisionElement(
+                id="conveyor",
+                source="scene",
+                pose=Pose.from_xyz_rpy(0.0, 0.0, 0.3, 0, 0, 0),
+                primitives=(SolidPrimitive.box(0.55, 2.4, 0.6),),
+                primitive_poses=(Pose.identity(),),
+                margin=0.005,
+            ),
+            CollisionElement(
+                id="bottle",
+                source="object",
+                pose=Pose.from_xyz_rpy(0.05, 0.3, 0.7, 0, 0, 0),
+                primitives=(SolidPrimitive.cylinder(0.2, 0.04),),
+                primitive_poses=(Pose.identity(),),
+                motion="moving",
+                compliance="deformable",
+                margin=0.01,
+                label="bottle",
+            ),
+            CollisionElement(
+                id="forearm_link",
+                source="self",
+                link="forearm_link",
+                pose=Pose.from_xyz_rpy(-0.3, 0.0, 1.0, 0, 1.2, 0),
+                primitives=(SolidPrimitive.cylinder(0.39, 0.045),),
+                primitive_poses=(Pose.identity(),),
+                motion="moving",
+            ),
         ),
         robot_state=JointState(name=("shoulder", "elbow"), position=[0.1, -1.2]),
-        acm=AllowedCollisionMatrix.from_pairs(("floor", "conveyor", "forearm_link"), [("floor", "conveyor", "Adjacent")]),
+        acm=AllowedCollisionMatrix.from_pairs(
+            ("floor", "conveyor", "forearm_link"), [("floor", "conveyor", "Adjacent")]
+        ),
         why="v1: static scene + detected objects + self at q",
     ),
     NamedPose.from_degrees(
