@@ -79,7 +79,8 @@ def main() -> None:
     tests = subprocess.run(
         [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
         cwd=REPO, capture_output=True, text=True,
-    ).stdout.strip().splitlines()[-1]  # fmt: skip
+    ).stdout  # fmt: skip
+    tests = next(line for line in reversed(tests.splitlines()) if " passed" in line or " failed" in line)
     sha = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"],
                          capture_output=True, text=True).stdout.strip()  # fmt: skip
     rows = [
