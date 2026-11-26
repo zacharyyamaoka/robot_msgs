@@ -112,6 +112,34 @@ whose stamps repeat or step back is built with
 `JointTrajectory.from_samples(..., duplicate_times="drop_later" | "average" | "error")`, which
 returns `(trajectory, repair)` and writes the same receipt into `header.meta`; never silently.
 
+## Compare anything a robot records: `compare(reference, measured)`
+
+```python
+from robot_msgs.compare import Dataset, Recording, Run, compare, compare_dataset
+
+result = target.compare(real)                  # error = target - real, same type, real's samples
+result.metrics["positions/j2"].rms             # ErrorStats: rms mean median max_abs p95_abs final iae …
+
+compare(sim_servos, real_servos)               # ServoStateTrajectory: positions/<j> … fault_mismatch
+compare(sim_camera, real_camera)               # ImageTrajectory: pixels, mae, rmse, psnr
+compare(sim_scan, real_scan)                   # PointCloud: distance, distance_reverse, chamfer
+imu_a.compare(imu_b)                           # two single messages: values only
+
+run = Run(name="pick_0.5", tags={"speed": 0.5}, recordings={
+    "target": Recording(streams={"joints": plan}),
+    "sim": Recording(streams={"joints": sim_q, "servo_state": sim_servos, "camera": sim_camera}),
+    "real": Recording(streams={"joints": real_q, "servo_state": real_servos, "camera": real_camera}),
+})
+sweep = compare_dataset(Dataset(runs=(run, ...)))  # target→sim, target→real, sim→real, per stream
+sweep.rows()                                       # one tidy row per run, pair, stream, metric + tags
+sweep.worst("positions/j2")                        # (run, a, b, stream, rms): where to drill in
+```
+
+Streams are trajectories: `ServoStateTrajectory`, `ServoCommandTrajectory`, `ImuTrajectory`,
+`WrenchTrajectory` and `ImageTrajectory` beside `JointTrajectory` and `PoseTrajectory`, each built
+from its message log (`ServoStateTrajectory.from_servo_states(states)`). Rules and every metric
+name: [docs/DESIGN.md](docs/DESIGN.md), "Comparing trajectories".
+
 ## Packages
 
 | Import | Types |
@@ -122,7 +150,8 @@ returns `(trajectory, repair)` and writes the same receipt into `header.meta`; n
 | `robot_msgs.control` | `ServoState` `ServoCommand` |
 | `robot_msgs.shape` | `SolidPrimitive` (box, sphere, cylinder, cone, prism: `volume` `inertia` `bounding_box` `contains` `to_mesh`) `Mesh` `Plane` `MeshResource` (a URDF-style file reference; no ROS message) |
 | `robot_msgs.vision` | `BoundingBox2D` `BoundingBox3D` `ObjectHypothesis` `ObjectHypothesisWithPose` `Detection2D` `Detection2DArray` `Detection3D` `Detection3DArray` |
-| `robot_msgs.trajectory` | `Trajectory` `JointTrajectory` `PoseTrajectory` (+ points) `JointLimits` (physical / software `position_kind`) `JointLimitViolation` `joint_limit_violations` `concatenate` `TimeRepair` |
+| `robot_msgs.trajectory` | `Trajectory` `JointTrajectory` `PoseTrajectory` (+ points) `JointLimits` (physical / software `position_kind`) `JointLimitViolation` `joint_limit_violations` `concatenate` `TimeRepair` · recorded streams: `ServoStateTrajectory` `ServoCommandTrajectory` `ImuTrajectory` `WrenchTrajectory` `ImageTrajectory` |
+| `robot_msgs.compare` | `compare` → `Comparison` (`ErrorStats` per metric) for every stream, single message and point cloud · `check` `aggregate` `goal` `relative_error` `frechet` `estimate_time_offset` · datasets: `Recording` `Run` `Dataset` → `compare_dataset` → `DatasetComparison` |
 | `robot_msgs.viz` `[viz]` | `plot(msg)` for every type, `animate(*trajectories, path=...)` |
 | `robot_msgs.ros` `[ros]` | `to_ros` / `from_ros` (ROS 2 Jazzy via rosbags), `write_bag` / `read_bag` (mcap) |
 
