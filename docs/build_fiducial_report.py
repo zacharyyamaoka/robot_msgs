@@ -120,7 +120,7 @@ Red crosses are the detected corners and green circles are where <code>FiducialP
 <li><b>Prefix <code>Fiducial*</code></b>, not <code>Marker*</code>: it covers ArUco and AprilTag (as fiducial_msgs does). Undo: rename in one commit.</li>
 <li><b>Both IPPE solutions</b> on every pose. All three agents asked for this. A filter with an FK prior picks the right one.</li>
 <li><b>Covariance is local-tangent</b> <code>[R<sup>T</sup>δp, rotvec(R<sup>T</sup>R<sub>true</sub>)]</code>, not ROS's fixed-axis. It is what the tracker and BA estimate in, and <code>local_to_parent_covariance</code> converts to ROS's. Checked by a 40k-sample Monte-Carlo draw.</li>
-<li><b>No CaptureSettings type</b>: exposure, gain and white balance ride in <code>Header.meta</code> for now. The calibration agent was told it can ask for a typed one.</li>
+<li><b>No CameraSettings added on request</b> (<code>robot_msgs.sensor</code>): SI, so exposure is in seconds where the calibration agent asked for µs. Undo: revert the commit.</li>
 <li><b>OpenCV is a test-only oracle</b> (added to the <code>[test]</code> extra), so the runtime stays numpy + dataclass-values.</li>
 <li><b>Mutation check</b>: swapping TL/TR in <code>marker_object_points</code> turns 7 tests red, and breaking the legacy parity turns 2 red.</li></ul>
 <h2>Not done</h2><ul class="mute">
