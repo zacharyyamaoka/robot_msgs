@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -20,6 +21,10 @@ IMAGE_ENCODINGS: dict[str, tuple[np.dtype, int]] = {
     "8UC3": (np.dtype(np.uint8), 3),
     "16UC1": (np.dtype(np.uint16), 1),
     "32FC1": (np.dtype(np.float32), 1),
+    # WHY the multi-channel float encodings (ROS's TYPE_32FC3 / TYPE_32FC4): a signed difference of
+    # two colour images (`robot_msgs.compare`) is float32 with the inputs' channels.
+    "32FC3": (np.dtype(np.float32), 3),
+    "32FC4": (np.dtype(np.float32), 4),
 }
 """sensor_msgs/image_encodings that we support: name → (numpy dtype, channels)."""
 
@@ -105,8 +110,11 @@ class Image(Msg):
         return cls(data=array, encoding=encoding, header=header if header is not None else Header())
 
     def to_rgb(self) -> Array:
-        """(H, W, 3) uint8 for display. Depth and 16-bit images are min-max normalised to grey."""
+        """(H, W, 3) uint8 for display. Depth and 16-bit images are min-max normalised to grey;
+        32FC3 / 32FC4 are min-max normalised over all their channels (alpha dropped)."""
         data = self.data
+        if self.encoding in ("32FC3", "32FC4"):
+            return _normalised_uint8(data[..., :3])
         if self.encoding in ("rgb8", "8UC3"):
             return np.array(data, dtype=np.uint8)
         if self.encoding == "bgr8":
@@ -136,6 +144,15 @@ class Image(Msg):
             )
         window = self.data[y_offset : y_offset + height, x_offset : x_offset + width]
         return self.replace(data=window)
+
+    def compare(self, measured: Image) -> Any:
+        """`measured` against this one as the reference → a `robot_msgs.compare.Comparison`.
+
+        Values only (stamps ignored), as one-sample streams; see `robot_msgs.compare.compare`.
+        """
+        from robot_msgs.compare import compare
+
+        return compare(self, measured)
 
 
 def _normalised_uint8(grey: Array) -> Array:
