@@ -6,12 +6,16 @@ import math
 import numpy as np
 
 from robot_msgs.compare import (
+    Dataset,
     JointTolerance,
     PoseTolerance,
+    Recording,
+    Run,
     Tolerances,
     aggregate,
     check,
     compare,
+    compare_dataset,
     error_stats,
     estimate_time_offset,
     goal,
@@ -46,13 +50,18 @@ from robot_msgs.sensor import CameraInfo, Image, Imu, JointState, PointCloud
 from robot_msgs.shape import MeshResource, Plane, SolidPrimitive
 from robot_msgs.std import ColorRGBA, DiagnosticRecord, Header, LogRecord, Metrics
 from robot_msgs.trajectory import (
+    ImageTrajectory,
+    ImuTrajectory,
     JointLimits,
     JointTrajectory,
     JointTrajectoryPoint,
     PoseTrajectory,
     PoseTrajectoryPoint,
+    ServoCommandTrajectory,
+    ServoStateTrajectory,
     Trajectory,
     TrajectoryPoint,
+    WrenchTrajectory,
     joint_limit_violations,
 )
 from robot_msgs.vision import (
@@ -105,6 +114,96 @@ BOX3D = BoundingBox3D(center=POSE, size=Vector3(0.07, 0.07, 0.25))
 DETECTION2D = Detection2D(header=HEADER, results=(HYPOTHESIS,), bbox=BOX2D, id="7")
 DETECTION3D = Detection3D(header=HEADER, results=(HYPOTHESIS,), bbox=BOX3D, id="7")
 CAMERA = CameraInfo.from_intrinsics(615.0, 615.0, 320.0, 240.0, 640, 480, header=HEADER)
+
+# The recorded streams: what a driver, an IMU, an F/T sensor and a camera log on sim and on real.
+SERVO_STATES = ServoStateTrajectory.from_servo_states(
+    [
+        ServoState(
+            name=NAMES,
+            position=[0.1 * k, 0.2, -0.1 * k],
+            velocity=[0.1, 0.0, -0.1],
+            effort=[0.5, -0.2, 0.1 * k],
+            temperature=[31.0 + 0.1 * k, 30.5, 29.0],
+            voltage=[24.1, 24.0, 24.1],
+            fault=[0, 0, 0 if k < 4 else 2],
+            seq=800 + k,
+            header=HEADER.replace(stamp=HEADER.stamp + 0.01 * k),
+        )
+        for k in range(6)
+    ]
+)
+SERVO_COMMANDS = ServoCommandTrajectory.from_servo_commands(
+    [
+        ServoCommand(
+            name=NAMES,
+            position=[0.1 * k + 0.01, 0.2, float("nan")],
+            velocity=[0.1, 0.0, -0.1],
+            stiffness=[30.0, 30.0, 5.0],
+            state_stamp=None if k == 0 else HEADER.stamp + 0.01 * k - 0.002,
+            header=HEADER.replace(stamp=HEADER.stamp + 0.01 * k),
+        )
+        for k in range(6)
+    ]
+)
+IMU_TRAJ = ImuTrajectory(
+    t=np.linspace(0.0, 0.5, 6),
+    orientations=[Quaternion.from_euler(0.0, 0.0, 0.1 * k).as_array() for k in range(6)],
+    angular_velocities=np.tile([0.0, 0.0, 0.2], (6, 1)),
+    linear_accelerations=np.tile([0.0, 0.1, 9.81], (6, 1)),
+    header=Header(stamp=12.0, frame_id="imu_link"),
+)
+WRENCH_TRAJ = WrenchTrajectory(
+    t=np.linspace(0.0, 0.5, 6),
+    forces=np.column_stack([np.zeros(6), np.zeros(6), np.linspace(-1.0, -9.0, 6)]),
+    torques=np.tile([0.05, -0.02, 0.0], (6, 1)),
+    channels={"saturated": np.array([0, 0, 0, 0, 1, 1], dtype=np.int64)},
+    header=Header(stamp=12.0, frame_id="ft_sensor"),
+)
+IMAGE_TRAJ = ImageTrajectory(
+    t=[0.0, 1 / 30, 2 / 30],
+    encoding="rgb8",
+    frames=RNG.integers(0, 255, size=(3, 12, 16, 3), dtype=np.uint8),
+    channels={"exposure_s": [0.008, 0.008, 0.01]},
+    header=HEADER,
+)
+CLOUD = PointCloud(
+    points=RNG.normal(size=(100, 3)).astype(np.float32),
+    channels={"rgb": RNG.integers(0, 255, size=(100, 3), dtype=np.uint8)},
+    header=HEADER,
+)
+# A run as sim-to-real records it: the target, then each source's streams under the same names.
+RUN = Run(
+    name="pick_0.5",
+    recordings={
+        "target": Recording(streams={"joints": JOINT_TRAJ}),
+        "sim": Recording(
+            streams={
+                "joints": JOINT_TRAJ.replace(positions=JOINT_TRAJ.positions + 0.01),
+                "servo_state": SERVO_STATES,
+                "imu": IMU_TRAJ,
+                "camera": IMAGE_TRAJ,
+            },
+            header=Header(meta={"engine": "mujoco 3.3"}),
+        ),
+        "real": Recording(
+            streams={
+                "joints": JOINT_TRAJ.replace(positions=JOINT_TRAJ.positions - 0.02),
+                "servo_state": SERVO_STATES.replace(positions=SERVO_STATES.positions + 0.003),
+                "imu": IMU_TRAJ.replace(angular_velocities=IMU_TRAJ.angular_velocities * 1.1),
+                "scan": CLOUD,
+            },
+            header=Header(meta={"rig": "bam_fb_v2"}),
+        ),
+    },
+    tags={"speed": 0.5, "payload_kg": 0.2, "gripper": "claw", "ok": True},
+    time_offset_s={"real": 0.0},
+    title="pick at half speed",
+)
+DATASET = Dataset(
+    runs=(RUN, RUN.replace(name="pick_1.0", tags={**RUN.tags, "speed": 1.0})),
+    title="speed sweep",
+)
+DATASET_COMPARISON = compare_dataset(DATASET)
 
 L_PRISM = SolidPrimitive.prism(0.4, [(0, 0), (2, 0), (2, 1), (1, 1), (1, 2), (0, 2)])
 
@@ -305,11 +404,7 @@ EXAMPLES = [
     ),
     Image.from_array(RNG.integers(0, 255, size=(48, 64, 3), dtype=np.uint8), header=HEADER),
     CAMERA,
-    PointCloud(
-        points=RNG.normal(size=(100, 3)).astype(np.float32),
-        channels={"rgb": RNG.integers(0, 255, size=(100, 3), dtype=np.uint8)},
-        header=HEADER,
-    ),
+    CLOUD,
     Imu(
         orientation=Quaternion(),
         angular_velocity=Vector3(0, 0, 0.1),
@@ -355,11 +450,28 @@ EXAMPLES = [
         "positions/j1"
     ],
     Trajectory(t=[0.0], channels={"x": [1.0]})[0],
+    SERVO_STATES,
+    SERVO_STATES[4],
+    SERVO_COMMANDS,
+    SERVO_COMMANDS[1],
+    IMU_TRAJ,
+    IMU_TRAJ[2],
+    WRENCH_TRAJ,
+    WRENCH_TRAJ[5],
+    IMAGE_TRAJ,
+    IMAGE_TRAJ[1],
+    compare(IMAGE_TRAJ, IMAGE_TRAJ.replace(frames=IMAGE_TRAJ.frames // 2)),
+    compare(CLOUD, CLOUD.transformed(POSE.as_transform().replace(rotation=Quaternion()))),
+    RUN.recordings["sim"],
+    RUN,
+    DATASET,
+    DATASET_COMPARISON.runs["pick_0.5"],
+    DATASET_COMPARISON,
 ]
 
 assert OUTCOME.violations, "the catalog's Outcome must carry a Violation to exemplify"
 assert LIMIT_VIOLATIONS, "the catalog's run must leave KIND_LIMITS somewhere to exemplify"
-assert isinstance(EXAMPLES[-1], TrajectoryPoint)
+assert any(type(example) is TrajectoryPoint for example in EXAMPLES)
 assert isinstance(JOINT_TRAJ[4], JointTrajectoryPoint) and isinstance(
     POSE_TRAJ[1], PoseTrajectoryPoint
 )

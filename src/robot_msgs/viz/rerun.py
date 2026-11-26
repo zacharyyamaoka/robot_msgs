@@ -44,6 +44,14 @@ except ModuleNotFoundError as error:  # pragma: no cover - exercised only withou
     ) from error
 
 from robot_msgs._core import Msg
+from robot_msgs.compare import (
+    Dataset,
+    DatasetComparison,
+    Recording,
+    Run,
+    RunComparison,
+    split_key,
+)
 from robot_msgs.compare.comparison import Comparison
 from robot_msgs.geometry import (
     Accel,
@@ -61,7 +69,15 @@ from robot_msgs.geometry import (
 from robot_msgs.manipulation import GraspPose, Waypoint, WaypointAction
 from robot_msgs.sensor import CameraInfo, Image, JointState, PointCloud
 from robot_msgs.shape import Mesh, SolidPrimitive
-from robot_msgs.trajectory import JointTrajectory, PoseTrajectory, Trajectory
+from robot_msgs.trajectory import (
+    ImageTrajectory,
+    ImuTrajectory,
+    JointTrajectory,
+    PoseTrajectory,
+    ServoCommandTrajectory,
+    ServoStateTrajectory,
+    Trajectory,
+)
 from robot_msgs.trajectory.trajectory import sample_fields
 from robot_msgs.vision import (
     BoundingBox2D,
@@ -79,7 +95,10 @@ APPLICATION_ID = "robot_msgs"
 TIMELINE = "t"
 AXIS_LENGTH = 0.1  # metres: the triad drawn at every pose
 _DEPTH_ENCODINGS = {"16UC1", "32FC1"}
-_COLOR_MODELS = {"rgb8": "RGB", "bgr8": "BGR", "rgba8": "RGBA", "bgra8": "BGRA", "8UC3": "RGB"}
+_COLOR_MODELS = {
+    "rgb8": "RGB", "bgr8": "BGR", "rgba8": "RGBA", "bgra8": "BGRA", "8UC3": "RGB",
+    "32FC3": "RGB", "32FC4": "RGBA",
+}  # fmt: skip
 
 
 def _part(name: object) -> str:
@@ -310,7 +329,14 @@ def _columns(traj: Trajectory, field_name: str, values: np.ndarray) -> list[str]
         "effort",
     ):
         return [str(n) for n in traj.joint_names]
-    if isinstance(traj, PoseTrajectory) and width == 4 and field_name == "orientations":
+    if (
+        isinstance(traj, (ServoStateTrajectory, ServoCommandTrajectory))
+        and values.ndim == 2
+        and width == len(traj.joint_names)
+        and field_name in {f.name for f in sample_fields(type(traj))}
+    ):
+        return [str(n) for n in traj.joint_names]
+    if width == 4 and field_name == "orientations":  # PoseTrajectory, ImuTrajectory: xyzw
         return ["x", "y", "z", "w"]
     if width == 3:
         return ["x", "y", "z"]
@@ -422,7 +448,22 @@ def _(comparison: Comparison, name: str | None = None, *, recording: rr.Recordin
     # WHY under error/ (2026-11-11): a recording often holds the compared trajectory under the same name (target / sim / real and each
     # one's Comparison); on the trajectory's own path the error would share its plot and its series. error/<field>/<column>/<name> is
     # its own tab, as traj_compare's Rerun projection keeps /error/...
-    _series(comparison.error, name, recording, prefix="error/")
+    error = comparison.error
+    if isinstance(error, PointCloud):
+        # WHY a 3D cloud, not series: a cloud error has no clock; each measured point is coloured
+        # by its distance to the reference (viridis: dark = on it, yellow = the worst point)
+        distance = np.asarray(error.channels["distance"], dtype=np.float64)
+        _log(
+            recording,
+            f"world/error/{_part(name)}",
+            rr.Points3D(np.asarray(error.points), colors=_viridis(distance)),
+            static=True,
+        )
+    elif isinstance(error, ImageTrajectory):
+        _log_frames(error, f"image/{_part(name)}.error", recording, as_depth=False)
+        _series(_channels_only(error), name, recording, prefix="error/")
+    else:
+        _series(error, name, recording, prefix="error/")
     rows = ["| metric | rms | p95 abs | max abs | final |", "|---|---|---|---|---|"]
     for metric, stats in comparison.metrics.items():
         values = [getattr(stats, key, None) for key in ("rms", "p95_abs", "max_abs", "final")]
@@ -439,6 +480,163 @@ def _(comparison: Comparison, name: str | None = None, *, recording: rr.Recordin
         rr.TextDocument("\n".join(rows), media_type="text/markdown"),
         static=True,
     )
+
+
+def _viridis(values: np.ndarray) -> np.ndarray:
+    """``(N, 3)`` uint8 colours of `values` on matplotlib's viridis, 0 → the smallest finite."""
+    from matplotlib import colormaps
+
+    finite = values[np.isfinite(values)]
+    low, high = (float(finite.min()), float(finite.max())) if finite.size else (0.0, 1.0)
+    scaled = np.clip((values - low) / ((high - low) or 1.0), 0.0, 1.0)
+    return (colormaps["viridis"](np.nan_to_num(scaled))[:, :3] * 255).astype(np.uint8)
+
+
+def _channels_only(traj: Trajectory) -> Trajectory:
+    """`traj`'s channels on its clock, without its typed fields (an image stream's frames would
+    otherwise become one series per pixel)."""
+    return Trajectory(t=traj.t, channels=traj.channels, header=traj.header)
+
+
+_CHANNEL_DATATYPES = {"u1": "U8", "u2": "U16", "f4": "F32"}
+
+
+def _log_frames(
+    traj: ImageTrajectory, path: str, stream: rr.RecordingStream, *, as_depth: bool
+) -> None:
+    """Every frame at `path` on the ``t`` timeline: one static format, then one buffer per frame
+    (Rerun's columnar image logging, so a long stream is one send, not N logs)."""
+    t = np.asarray(traj.t, dtype=np.float64)
+    data = np.ascontiguousarray(traj.frames)
+    datatype = _CHANNEL_DATATYPES[data.dtype.str.lstrip("<>|=")]
+    buffers = data.reshape(len(t), -1).view(np.uint8)
+    seconds = t - t[0] if t.size else t
+    if as_depth:
+        fmt = rr.components.ImageFormat(width=traj.width, height=traj.height,
+                                        channel_datatype=datatype)  # fmt: skip
+        meter = 1000.0 if traj.encoding == "16UC1" else 1.0
+        _log(stream, path, rr.DepthImage.from_fields(format=fmt, meter=meter), static=True)
+        columns = rr.DepthImage.columns(buffer=buffers)
+    else:
+        model = _COLOR_MODELS.get(traj.encoding, "L")
+        fmt = rr.components.ImageFormat(width=traj.width, height=traj.height, color_model=model,
+                                        channel_datatype=datatype)  # fmt: skip
+        _log(stream, path, rr.Image.from_fields(format=fmt), static=True)
+        columns = rr.Image.columns(buffer=buffers)
+    _send(stream, path, indexes=[rr.TimeColumn(TIMELINE, duration=seconds)], columns=columns)
+
+
+@log.register
+def _(traj: ImageTrajectory, name: str | None = None, *, recording: rr.RecordingStream) -> None:
+    """The frames at ``image/<name>`` on the ``t`` timeline (depth encodings as depth images,
+    16UC1 in mm), and any channels as series."""
+    name = name or type(traj).__name__
+    _log_frames(traj, f"image/{_part(name)}", recording, as_depth=traj.encoding in _DEPTH_ENCODINGS)
+    if traj.channels:
+        _series(_channels_only(traj), name, recording)
+
+
+@log.register
+def _(traj: ImuTrajectory, name: str | None = None, *, recording: rr.RecordingStream) -> None:
+    """The stock series, and the IMU's orientation as a frame turning at the world origin."""
+    name = name or type(traj).__name__
+    _series(traj, name, recording)
+    t = np.asarray(traj.t, dtype=np.float64)
+    base = f"world/{_part(name)}"
+    _log(recording, f"{base}/frame", rr.TransformAxes3D(AXIS_LENGTH), static=True)
+    _send(
+        recording,
+        f"{base}/frame",
+        indexes=[rr.TimeColumn(TIMELINE, duration=t - t[0] if t.size else t)],
+        columns=rr.Transform3D.columns(
+            translation=np.zeros((len(t), 3)), quaternion=np.asarray(traj.orientations)
+        ),
+    )
+
+
+# ── recorded runs: every stream under its source's name ──────────────────────
+
+
+def _note(stream: rr.RecordingStream, name: str, rows: Sequence[str]) -> None:
+    _log(stream, f"notes/{_part(name)}",
+         rr.TextDocument("\n".join(rows), media_type="text/markdown"), static=True)  # fmt: skip
+
+
+def _span(msg: Msg) -> str:
+    if isinstance(msg, Trajectory):
+        return f"{len(msg)} samples, {msg.duration:.3g} s"
+    if isinstance(msg, PointCloud):
+        return f"{len(msg)} points"
+    return ""
+
+
+@log.register
+def _(rec: Recording, name: str | None = None, *, recording: rr.RecordingStream) -> None:
+    """Each stream logged as ``<name>.<stream>``, so the same stream of two sources (sim.joints,
+    real.joints) lands on the same plots as two lines; ``notes/<name>`` lists the streams."""
+    name = name or "Recording"
+    rows = ["| stream | type | span |", "|---|---|---|"]
+    for stream_name, msg in rec.streams.items():
+        log(msg, f"{name}.{stream_name}", recording=recording)
+        rows.append(f"| {stream_name} | {type(msg).__name__} | {_span(msg)} |")
+    _note(recording, name, rows)
+
+
+@log.register
+def _(run: Run, name: str | None = None, *, recording: rr.RecordingStream) -> None:
+    """Every recording as ``<run>.<source>.<stream>``; ``notes/<run>`` holds its tags and pairs."""
+    name = name or run.name
+    for source, rec in run.recordings.items():
+        log(rec, f"{name}.{source}", recording=recording)
+    rows = [f"**{run.title or run.name}**", "", "| tag | value |", "|---|---|"]
+    rows += [f"| {key} | {value} |" for key, value in run.tags.items()]
+    rows += ["", "pairs: " + ", ".join(f"{a} → {b}" for a, b in run.resolved_pairs())]
+    _note(recording, name, rows)
+
+
+@log.register
+def _(dataset: Dataset, name: str | None = None, *, recording: rr.RecordingStream) -> None:
+    """Every run, each under its own name (prefixed by `name` when given); ``notes/<name>`` is
+    the table of runs and their tags."""
+    name = name or dataset.title or "Dataset"
+    keys = list(dict.fromkeys(key for run in dataset.runs for key in run.tags))
+    rows = ["| run | " + " | ".join(keys) + " |", "|---|" + "---|" * len(keys)]
+    for run in dataset.runs:
+        log(run, f"{name}.{run.name}", recording=recording)
+        rows.append(f"| {run.name} | " + " | ".join(str(run.tags.get(k, "")) for k in keys) + " |")
+    _note(recording, name, rows)
+
+
+@log.register
+def _(result: RunComparison, name: str | None = None, *, recording: rr.RecordingStream) -> None:
+    """Every Comparison as ``<run>.<a>_<b>.<stream>`` (its error series and metrics table);
+    ``notes/<run>`` lists what was compared and every skipped stream with its reason."""
+    name = name or result.run
+    rows = ["| a → b / stream | compared |", "|---|---|"]
+    for key, comparison in result.comparisons.items():
+        a, b, stream_name = split_key(key)
+        log(comparison, f"{name}.{a}_{b}.{stream_name}", recording=recording)
+        rows.append(f"| {key} | {len(comparison.metrics)} metrics |")
+    rows += [f"| {key} | skipped: {why} |" for key, why in result.skipped.items()]
+    _note(recording, name, rows)
+
+
+@log.register
+def _(
+    result: DatasetComparison, name: str | None = None, *, recording: rr.RecordingStream
+) -> None:
+    """Every run's comparisons (as `RunComparison`), and the across-run table of each metric's
+    rms in ``notes/<name>``: the drill-down starts at its largest row."""
+    name = name or result.title or "DatasetComparison"
+    rows = ["| run | a → b | stream | metric | rms | max abs |", "|---|---|---|---|---|---|"]
+    for row in result.rows():
+        rows.append(
+            f"| {row['run']} | {row['a']} → {row['b']} | {row['stream']} | {row['metric']} "
+            f"| {row['rms']:.6g} | {row['max_abs']:.6g} |"
+        )
+    _note(recording, name, rows)
+    for run_name, run in result.runs.items():
+        log(run, f"{name}.{run_name}", recording=recording)
 
 
 @log.register

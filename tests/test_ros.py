@@ -31,6 +31,24 @@ UNMAPPED = {
     # robot_msgs.compare results: ROS has no message for a trajectory comparison
     "ErrorStats",
     "Comparison",
+    # recorded streams (servo, IMU, F/T, camera): ROS sends these one message at a time (a bag of
+    # JointState / Imu / WrenchStamped / Image), never as one trajectory message
+    "ServoStateTrajectory",
+    "ServoStateTrajectoryPoint",
+    "ServoCommandTrajectory",
+    "ServoCommandTrajectoryPoint",
+    "ImuTrajectory",
+    "ImuTrajectoryPoint",
+    "WrenchTrajectory",
+    "WrenchTrajectoryPoint",
+    "ImageTrajectory",
+    "ImageTrajectoryPoint",
+    # a dataset of runs and its comparison: analysis records, no ROS message
+    "Recording",
+    "Run",
+    "Dataset",
+    "RunComparison",
+    "DatasetComparison",
     # a file reference: shape_msgs has no file mesh (only visualization_msgs Marker MESH_RESOURCE,
     # which also needs a pose, colour and header of its own)
     "MeshResource",
@@ -93,7 +111,7 @@ MAPPED = [m for m in EXAMPLES if type(m).__name__ not in UNMAPPED]
 
 def test_catalog_is_split_into_mapped_and_unmapped():
     assert {type(m).__name__ for m in EXAMPLES if type(m).__name__ in UNMAPPED} == UNMAPPED
-    assert len(MAPPED) + 39 == len(EXAMPLES)
+    assert len(MAPPED) + 56 == len(EXAMPLES)
 
 
 @pytest.mark.parametrize("msg", MAPPED, ids=lambda m: type(m).__name__)
