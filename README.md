@@ -1,7 +1,5 @@
 # robot_msgs
 
-**Landing page: [robotmsgs.com](https://robotmsgs.com)**
-
 A cohesive domain model for robot data: the standard message types — ROS's `geometry_msgs`,
 `sensor_msgs`, `trajectory_msgs`, `vision_msgs` — as frozen Python dataclasses, **with the
 functions that move between them**. Offsetting a pose, interpolating a trajectory, projecting a
@@ -12,6 +10,8 @@ point, turning a depth image into a cloud: first-class methods, not separate lib
 - **Immutable values over compact numpy storage.** Every message is frozen; its arrays are
   read-only, so slices, rows and columns are free views.
 - **Runtime dependencies: numpy and the stdlib-only `dataclass-values` (`Value`/`Space`).** Plots (`[viz]`), the Rerun viewer (`[rerun]`) and ROS export (`[ros]`) are extras.
+
+**Landing page: [robotmsgs.com](https://robotmsgs.com)**
 
 ## Look at any message: `.show()` and `.plot()`
 
