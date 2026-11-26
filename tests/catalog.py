@@ -65,7 +65,7 @@ from robot_msgs.manipulation import (
     Waypoint,
     WaypointAction,
 )
-from robot_msgs.sensor import CameraInfo, Image, Imu, JointState, PointCloud
+from robot_msgs.sensor import CameraInfo, CameraSettings, Image, Imu, JointState, PointCloud
 from robot_msgs.shape import MeshResource, Plane, SolidPrimitive
 from robot_msgs.std import ColorRGBA, DiagnosticRecord, Header, LogRecord, Metrics
 from robot_msgs.trajectory import (
@@ -256,6 +256,17 @@ FIDUCIAL_BOARD = FiducialBoard(
 )
 
 EXAMPLES = [
+    CameraSettings(
+        exposure_time=0.008,
+        gain=6.0,
+        white_balance=4500.0,
+        gamma=1.0,
+        auto_exposure=False,
+        auto_white_balance=False,
+        focus=120.0,
+        frame_rate=30.0,
+        header=Header(stamp=1_761_600_000.0, frame_id="camera_color_optical_frame"),
+    ),
     FIDUCIAL_DETECTION,
     FIDUCIAL_POSE,
     FiducialArray(header=HEADER, detections=(FIDUCIAL_DETECTION,), poses=(FIDUCIAL_POSE,)),

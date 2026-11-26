@@ -21,6 +21,8 @@ from robot_msgs.trajectory import JointLimits, JointTrajectory, PoseTrajectory, 
 from robot_msgs.vision import Detection2DArray, ObjectHypothesisWithPose
 
 UNMAPPED = {
+    # capture settings: ROS drivers expose them as parameters, there is no message
+    "CameraSettings",
     # robot_msgs.fiducial: aruco_msgs / fiducial_msgs / apriltag_msgs are not in rosbags' stock
     # typestore; lowering them is a follow-up, so none of these round-trip through ROS yet
     "FiducialDetection",
@@ -124,7 +126,7 @@ MAPPED = [m for m in EXAMPLES if type(m).__name__ not in UNMAPPED]
 
 def test_catalog_is_split_into_mapped_and_unmapped():
     assert {type(m).__name__ for m in EXAMPLES if type(m).__name__ in UNMAPPED} == UNMAPPED
-    assert len(MAPPED) + 66 == len(EXAMPLES)
+    assert len(MAPPED) + 67 == len(EXAMPLES)
 
 
 @pytest.mark.parametrize("msg", MAPPED, ids=lambda m: type(m).__name__)

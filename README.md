@@ -146,7 +146,7 @@ name: [docs/DESIGN.md](docs/DESIGN.md), "Comparing trajectories".
 |---|---|
 | `robot_msgs.std` | `Header` `ColorRGBA` · a running component's own reports: `LogRecord` `DiagnosticRecord` `Metrics` |
 | `robot_msgs.geometry` | `Vector3` `Point` `Quaternion` `Pose` `Pose2D` `Transform` `Twist` `Wrench` `Accel` `Inertia` `PoseStamped` `TransformStamped` · batch maths in `geometry.rotations` (incl. direct `euler_to_matrix` / `matrix_to_euler`) |
-| `robot_msgs.sensor` | `JointState` `Image` `CameraInfo` `PointCloud` `Imu` |
+| `robot_msgs.sensor` | `JointState` `Image` `CameraInfo` `CameraSettings` `PointCloud` `Imu` |
 | `robot_msgs.control` | `ServoState` `ServoCommand` |
 | `robot_msgs.shape` | `SolidPrimitive` (box, sphere, cylinder, cone, prism: `volume` `inertia` `bounding_box` `contains` `to_mesh`) `Mesh` `Plane` `MeshResource` (a URDF-style file reference; no ROS message) |
 | `robot_msgs.manipulation` | `GraspPose` `Waypoint` `WaypointAction` `CartesianLimits` `NamedPose` `AllowedCollisionMatrix` · `CollisionScene` of `CollisionElement`s (moveit_msgs PlanningScene / CollisionObject; each element tagged scene / object / self, fixed / moving, rigid / deformable, with a `margin` and a `contact` policy, v1 `avoid`; checked and viewed by robot_collision) |

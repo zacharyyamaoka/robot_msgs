@@ -608,3 +608,16 @@ def test_imu_is_an_immutable_value():
 def test_imu_round_trip(tmp_path):
     round_trip(make_imu(), tmp_path)
     round_trip(make_imu(orientation_covariance=np.arange(9.0).reshape(3, 3)), tmp_path)
+
+
+def test_camera_settings_are_si_and_refuse_nonsense():
+    from robot_msgs.sensor import CameraSettings
+
+    settings = CameraSettings(exposure_time=0.008, frame_rate=50.0, auto_exposure=False)
+    assert settings.gain is None and settings.max_exposure_for_frame_rate == pytest.approx(0.02)
+    with pytest.raises(ValueError, match="exposure_time"):
+        CameraSettings(exposure_time=0.0)
+    with pytest.raises(ValueError, match="white_balance"):
+        CameraSettings(white_balance=-1.0)
+    with pytest.raises(TypeError, match="auto_exposure"):
+        CameraSettings(auto_exposure=1)
