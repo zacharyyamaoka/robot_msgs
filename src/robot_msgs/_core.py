@@ -192,6 +192,30 @@ class Msg:
     def from_dict(cls: type[M], data: Mapping[str, Any]) -> M:
         return from_dict(data, cls)
 
+    # WHY methods (Zach, 2026-11-26: "I like how simple and clear it is to read"):
+    # ``state.save("arm")`` / ``state = RobotState.load("arm")``. Rules in robot_msgs._storage.
+
+    def save(self, path: Any) -> Any:
+        """Save this message to `path`, atomically; returns the `Path` written.
+
+        ``.json`` is human-readable, ``.npz`` compact (arrays raw, no pickle); any other name gets
+        ``.npz`` appended, as `numpy.savez` does. Many messages at once: `robot_msgs.save`.
+        """
+        from robot_msgs._storage import save
+
+        return save(self, path)
+
+    @classmethod
+    def load(cls: type[M], path: Any) -> M:
+        """The message saved at `path` (same suffix rule as `save`).
+
+        ``JointState.load(p)`` raises `TypeError` when the file holds another type;
+        ``Msg.load(p)`` returns whatever type the file names.
+        """
+        from robot_msgs._storage import load_message
+
+        return load_message(cls, path)  # type: ignore[return-value]
+
     # WHY methods on the base (Zach, 2026-11-11): "type.show() and a visualisation just shows up".
     # Both import lazily, so the core stays numpy-only; the work lives in robot_msgs.viz.
 

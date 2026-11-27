@@ -60,6 +60,24 @@ roll / pitch / yaw, speed, angular speed). It opens paused at t = 0, on q; play 
   qddd, q / qd / qdd; every joint read as revolute) and `joint_tabs_blueprint(traj, name)` lays
   them out at full width. robot_msg_viz's JointTrajectory view uses them.
 
+## Save and load: `state.save("arm")`
+
+```python
+state = RobotState(components={"bt": BTState(tree_id="Bringup"), "joints": joints})
+state.save("arm")                          # arm.npz: compact, arrays raw, no pickle
+state = RobotState.load("arm")             # TypeError if arm.npz holds another type
+bt.save("bt.json")                         # .json: human-readable, arrays inline
+robot_msgs.save({"config": config, "state": state, "history": states}, "step.npz")
+step = robot_msgs.load("step.npz")         # the same dict, list and tuple back
+```
+
+The suffix picks the encoding: `.json` readable, `.npz` compact, anything else gets `.npz`
+appended (numpy.savez's rule). Every write is atomic (temporary file, then `os.replace`), so a
+crash mid-save keeps the old file. A bundle is any list, tuple or dict of messages, nested as deep
+as you like. `RobotState` and `RobotConfig` hold named component messages (`state["joints"]`,
+`state.with_components(joints=measured)`); `BTState` is a behaviour tree's statuses, blackboard,
+tick and clock.
+
 ## A trajectory is one entity with many views
 
 ```python
@@ -150,6 +168,8 @@ name: [docs/DESIGN.md](docs/DESIGN.md), "Comparing trajectories".
 | `robot_msgs.control` | `ServoState` `ServoCommand` |
 | `robot_msgs.shape` | `SolidPrimitive` (box, sphere, cylinder, cone, prism: `volume` `inertia` `bounding_box` `contains` `to_mesh`) `Mesh` `Plane` `MeshResource` (a URDF-style file reference; no ROS message) |
 | `robot_msgs.manipulation` | `GraspPose` `Waypoint` `WaypointAction` `CartesianLimits` `NamedPose` `AllowedCollisionMatrix` · `CollisionScene` of `CollisionElement`s (moveit_msgs PlanningScene / CollisionObject; each element tagged scene / object / self, fixed / moving, rigid / deformable, with a `margin` and a `contact` policy, v1 `avoid`; checked and viewed by robot_collision) |
+| `robot_msgs.behavior` | `BTState` (a behaviour tree's node statuses by path, JSON blackboard, tick, clock) |
+| `robot_msgs.robot` | `RobotState` `RobotConfig` (the whole robot as named component messages; nest freely) |
 | `robot_msgs.vision` | `BoundingBox2D` `BoundingBox3D` `ObjectHypothesis` `ObjectHypothesisWithPose` `Detection2D` `Detection2DArray` `Detection3D` `Detection3DArray` |
 | `robot_msgs.fiducial` | ArUco / AprilTag / ChArUco: `FiducialDetection` (id, dictionary, 4 corner px) `FiducialPose` (`T_camera_marker` + the other IPPE solution) `FiducialArray` · `FiducialMount` (a marker on a link, board or world) `FiducialMap` `FiducialBoard` (grid / ChArUco → its mounts, OpenCV geometry) · `FiducialTrack` `FiducialTrackArray` (filtered pose, observed or predicted) |
 | `robot_msgs.trajectory` | `Trajectory` `JointTrajectory` `PoseTrajectory` (+ points) `JointLimits` (physical / software `position_kind`) `JointLimitViolation` `joint_limit_violations` `concatenate` `TimeRepair` · recorded streams: `ServoStateTrajectory` `ServoCommandTrajectory` `ImuTrajectory` `WrenchTrajectory` `ImageTrajectory` |
@@ -158,7 +178,7 @@ name: [docs/DESIGN.md](docs/DESIGN.md), "Comparing trajectories".
 | `robot_msgs.ros` `[ros]` | `to_ros` / `from_ros` (ROS 2 Jazzy via rosbags), `write_bag` / `read_bag` (mcap) |
 
 Every message: `==` and `hash` by value, a short `repr`, `replace(...)`, `to_dict()` /
-`from_dict()`, `save_npz` / `load_npz`, pickling.
+`from_dict()`, `save(path)` / `load(path)` (`.json` or `.npz`), `save_npz` / `load_npz`, pickling.
 `robot_msgs.adopt(array)` hands a numpy array over without a copy (a view of a received buffer).
 
 ## Conventions

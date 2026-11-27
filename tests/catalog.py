@@ -5,6 +5,7 @@ import math
 
 import numpy as np
 
+from robot_msgs.behavior import BTState
 from robot_msgs.compare import (
     Dataset,
     JointTolerance,
@@ -65,6 +66,7 @@ from robot_msgs.manipulation import (
     Waypoint,
     WaypointAction,
 )
+from robot_msgs.robot import RobotConfig, RobotState
 from robot_msgs.sensor import CameraInfo, CameraSettings, Image, Imu, JointState, PointCloud
 from robot_msgs.shape import MeshResource, Plane, SolidPrimitive
 from robot_msgs.std import ColorRGBA, DiagnosticRecord, Header, LogRecord, Metrics
@@ -255,7 +257,27 @@ FIDUCIAL_BOARD = FiducialBoard(
     header=Header(frame_id="wrist_board"),
 )
 
+BT_STATE = BTState(
+    tree_id="Bringup",
+    node_status={"Bringup/Sequence": "RUNNING", "Bringup/Sequence/Home": "SUCCESS",
+                 "Bringup/Sequence/WarmUp": "RUNNING", "Bringup/Sequence/Pick": "IDLE"},
+    blackboard={"homed": True, "warmed_up": False, "last_active_s": 1795828140.4,
+                "bins": ["paper", "plastic"], "limits": {"speed": 0.5, "tool": None}},
+    tick=42,
+    clock_s=12.5,
+    header=HEADER,
+)  # fmt: skip
+
 EXAMPLES = [
+    BT_STATE,
+    RobotState(
+        components={
+            "bt": BT_STATE,
+            "joints": JointState(name=("j1", "j2"), position=[0.1, -1.2], velocity=[0.0, 0.3]),
+        },
+        header=HEADER,
+    ),
+    RobotConfig(components={"camera": CameraSettings(exposure_time=0.01)}),
     CameraSettings(
         exposure_time=0.008,
         gain=6.0,
