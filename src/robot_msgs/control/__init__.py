@@ -18,6 +18,7 @@ from robot_msgs.control.servo_command import SERVO_MODES, ServoCommand
 
 # isort: split
 from robot_msgs.control import helpers
+from robot_msgs.control.controller_manager import ControllerManager, ManagerTick
 from robot_msgs.control.joint_command import (
     ALL_JOINTS,
     MODES,
@@ -61,6 +62,7 @@ __all__ = [
     "ALL_JOINTS",
     "Command",
     "Condition",
+    "ControllerManager",
     "Delay",
     "Event",
     "FailWhen",
@@ -70,6 +72,7 @@ __all__ = [
     "JointCommandController",
     "JointCommandResult",
     "JointCommandTick",
+    "ManagerTick",
     "PRIMITIVES",
     "Record",
     "Reduce",
