@@ -27,7 +27,7 @@ playhead table at ``/notes/<name>`` (see "a JointTrajectory with its robot" belo
 from __future__ import annotations
 
 import re
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from functools import singledispatch
 from pathlib import Path
 from typing import Any
@@ -77,6 +77,7 @@ from robot_msgs.trajectory import (
     ServoCommandTrajectory,
     ServoStateTrajectory,
     Trajectory,
+    WrenchTrajectory,
 )
 from robot_msgs.trajectory.trajectory import sample_fields
 from robot_msgs.vision import (
@@ -277,18 +278,25 @@ def view(stream: rr.RecordingStream) -> rr.RecordingStream:
 
 
 def save(
-    path: str, *messages: Msg, robot: str | Path | None = None, ghosts: bool = True, **named: Msg
+    path: str, *messages: Msg, robot: str | Path | None = None, ghosts: bool = True,
+    wrenches: Mapping[str, WrenchTrajectory] | None = None, events: Sequence[tuple[float, str]] | None = None,
+    plots: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None, **named: Msg
 ) -> str:
     """Write the messages to an ``.rrd`` file; open it with ``rerun <path>``.
 
     ``save("plan.rrd", plan=traj, robot="ur5e.urdf", tool=tcp)`` writes the URDF dashboard
     (`robot_blueprint`); ``ghosts=False`` leaves out the start and end arms, for a web bundle of
     many trajectories: each is another copy of every mesh (the UR5e's: 0.3 MB each, 28 % of a
-    3 s trajectory's 2.2 MB)."""
+    3 s trajectory's 2.2 MB).
+
+    With ``robot=``, three opt-in extras (`_RobotPlan`): ``wrenches={"hand": WrenchTrajectory}`` draws each force as
+    an arrow at the tool point plus a Wrench tab, ``events=[(t, "release"), ...]`` puts moments on the timeline plus an
+    Events tab, and ``plots={tab: {plot title: {series: values}}}`` adds tabs of series on the trajectory's clock."""
     stream = rr.RecordingStream(APPLICATION_ID)
+    _extras_need_robot(robot, wrenches, events, plots)
     if robot is not None:
         traj, name, tool = _robot_inputs(messages, named)
-        plan = _robot_plan(traj, name, robot, tool)
+        plan = _robot_plan(traj, name, robot, tool, wrenches=wrenches, events=events, plots=plots)
         # WHY default_blueprint at save (the round's R4): sent after the data, the playhead pinned
         # at the first chunk's time; written first, the file opens paused at t = 0
         stream.save(path, default_blueprint=_robot_dashboard(plan, ghosts=ghosts))
@@ -653,8 +661,12 @@ def _(
     robot: str | Path | None = None,
     tool: PoseTrajectory | None = None,
     ghosts: bool = True,
+    wrenches: Mapping[str, WrenchTrajectory] | None = None,
+    events: Sequence[tuple[float, str]] | None = None,
+    plots: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
 ) -> None:
-    """The stock series (as every Trajectory); with ``robot`` (a URDF path), also its arm.
+    """The stock series (as every Trajectory); with ``robot`` (a URDF path), also its arm (and the opt-in
+    ``wrenches`` / ``events`` / ``plots`` of `save`).
 
     ``robot`` draws the trajectory as Rerun's own URDF arm at ``/world/<name>/robot`` on the ``t``
     timeline, faint ``ghosts`` at its start and end poses, the tool's path, the derived jerk and TCP
@@ -663,6 +675,7 @@ def _(
     kinematics). The series are then in degrees for the URDF's revolute joints; `robot_blueprint`
     lays the recording out. Without ``robot`` nothing changes."""
     name = name or type(traj).__name__
+    _extras_need_robot(robot, wrenches, events, plots)
     if robot is None:
         if tool is not None:
             raise TypeError("tool= is the tool path of robot=: pass robot= (a URDF path) too")
@@ -673,7 +686,8 @@ def _(
     styled = [key for key, value in given.items() if value]
     if styled:
         raise TypeError(f"with robot= the URDF decides the series' units and style; drop {styled}")
-    _log_robot(traj, _robot_plan(traj, name, robot, tool), recording, ghosts=ghosts)
+    _log_robot(traj, _robot_plan(traj, name, robot, tool, wrenches=wrenches, events=events, plots=plots), recording,
+               ghosts=ghosts)
 
 
 # ── a JointTrajectory with its robot: the URDF arm, and tabs of joint and TCP plots ───────────────────
@@ -1111,7 +1125,10 @@ class _RobotPlan(_JointPlan):
     Pure: nothing is logged here, so the blueprint can be built (and written) before the data. The joint tabs are
     `_JointPlan`'s, with the URDF's joint types (degrees for revolute joints only) and its limits under the message's."""
 
-    def __init__(self, traj: JointTrajectory, name: str, robot: str | Path, tool: PoseTrajectory | None) -> None:
+    def __init__(self, traj: JointTrajectory, name: str, robot: str | Path, tool: PoseTrajectory | None, *,
+                 wrenches: Mapping[str, WrenchTrajectory] | None = None,
+                 events: Sequence[tuple[float, str]] | None = None,
+                 plots: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None) -> None:  # fmt: skip
         import rerun.urdf as rurdf
 
         self.urdf = Path(robot).expanduser().resolve()
@@ -1177,6 +1194,57 @@ class _RobotPlan(_JointPlan):
         self.eye = _eye(np.vstack([*(pose[:, :3, 3] for pose in links.values()), tool_root]))
         length = float(np.linalg.norm(np.diff(self.tool_xyz, axis=0), axis=1).sum())
         self.title = (f"{name} · {tree.name} · {self.seconds[-1]:.2f} s · {self.tool_label} path {length:.2f} m")
+        self._extras(traj, wrenches, events, plots)
+
+    # ── the opt-in extras: wrenches (an arrow at the tool), events (the timeline), plots (more tabs) ──────────────
+
+    def _extras(self, traj: JointTrajectory, wrenches: Mapping[str, WrenchTrajectory] | None,
+                events: Sequence[tuple[float, str]] | None,
+                plots: Mapping[str, Mapping[str, Mapping[str, Any]]] | None) -> None:  # fmt: skip
+        """Validate the extras and add their tabs (after TCP: Wrench, then each of ``plots``, then Events).
+
+        WHY at the tool point and in the tool's frame (2026-11-27, the gravity compensation box): a person pushes the
+        arm somewhere, and the one point every recording here has is the tool; a force in any other frame would need
+        a rotation this viewer does not know, so it is refused rather than drawn wrong."""
+        t0 = float(traj.t[0]) if len(traj.t) else 0.0
+        self.wrenches: list[tuple[str, str, np.ndarray, np.ndarray, np.ndarray]] = []
+        for label, wrench in (wrenches or {}).items():
+            if not isinstance(wrench, WrenchTrajectory):
+                raise TypeError(f"wrenches[{label!r}] is a WrenchTrajectory, got {type(wrench).__name__}")
+            frame = wrench.header.frame_id or self.root
+            if frame != self.tool_frame:
+                raise ValueError(f"wrenches[{label!r}] is in frame {frame!r}; it is drawn at the tool point, so it must "
+                                 f"be in the tool's frame {self.tool_frame!r} (empty = the root link {self.root!r})")
+            seconds = np.asarray(wrench.t, dtype=np.float64) - t0
+            forces = np.asarray(wrench.forces, dtype=np.float64)
+            origins = np.stack([np.interp(seconds, self.tool_t, self.tool_xyz[:, k]) for k in range(3)], axis=1)
+            self.wrenches.append((str(label), _part(label), seconds, forces, origins))
+        peak = max((float(np.linalg.norm(f, axis=1).max()) for *_, f, _ in self.wrenches if len(f)), default=0.0)
+        # WHY a 1-2-5 scale (a scale bar reads "1 N = 10 mm"): the largest force is drawn 0.1-0.25 m long, visible
+        # beside an arm without hiding it
+        self.force_scale = _nice_floor(0.25 / peak) if peak > 0.0 else 0.0
+        if self.wrenches:
+            per_newton = f"{self.force_scale * 1000.0:.3g} mm"
+            self.tabs["Wrench"] = [
+                _Strip(f"{label}: force [N] · peak {float(np.linalg.norm(forces, axis=1).max()):.1f} N · arrow 1 N = "
+                       f"{per_newton} · x red, y green, z blue, |F| black", [f"/wrench/{part}/**"], legend=True)
+                for label, part, _, forces, _ in self.wrenches]  # fmt: skip
+        self.plots: list[tuple[str, int, str, np.ndarray]] = []
+        for tab, figures in (plots or {}).items():
+            strips = []
+            for index, (title, series) in enumerate(figures.items()):
+                for line, values in series.items():
+                    values = np.asarray(values, dtype=np.float64).reshape(-1)
+                    if len(values) != len(self.seconds):
+                        raise ValueError(f"plots[{tab!r}][{title!r}][{line!r}] needs one value per sample of the "
+                                         f"trajectory ({len(self.seconds)}), got {len(values)}")
+                    self.plots.append((f"/plots/{_part(tab).lower()}/{index}/{_part(line)}", index, str(line), values))
+                strips.append(_Strip(str(title), [f"/plots/{_part(tab).lower()}/{index}/**"], legend=True))
+            if strips:
+                self.tabs[str(tab)] = strips
+        self.events = sorted(((float(at) - t0, str(text)) for at, text in (events or ())), key=lambda row: row[0])
+        if self.events:
+            self.tabs["Events"] = [_Strip("Events", ["/events"])]
 
     def _tcp_strips(self, source: str) -> list[_Strip]:
         speed, angular = self.tcp["speed_mm_s"], self.tcp["angular_speed_deg_s"]
@@ -1192,8 +1260,21 @@ class _RobotPlan(_JointPlan):
         ]  # fmt: skip
 
 
-def _robot_plan(traj: JointTrajectory, name: str, robot: str | Path, tool: PoseTrajectory | None) -> _RobotPlan:
-    return _RobotPlan(traj, name, robot, tool)
+def _robot_plan(traj: JointTrajectory, name: str, robot: str | Path, tool: PoseTrajectory | None,
+                **extras: Any) -> _RobotPlan:
+    return _RobotPlan(traj, name, robot, tool, **extras)
+
+
+def _extras_need_robot(robot: Any, wrenches: Any, events: Any, plots: Any) -> None:
+    given = [name for name, value in (("wrenches", wrenches), ("events", events), ("plots", plots)) if value]
+    if given and robot is None:
+        raise TypeError(f"{given} are drawn with the arm: pass robot= (a URDF path) too")
+
+
+def _nice_floor(value: float) -> float:
+    """The largest 1-2-5 number (…, 0.01, 0.02, 0.05, 0.1, …) not above ``value``."""
+    exponent = 10.0 ** np.floor(np.log10(value))
+    return max(m * exponent for m in (1.0, 2.0, 5.0) if m * exponent <= value * (1.0 + 1e-12))
 
 
 def _geometry_kinds(chunks: list[Any]) -> dict[str, tuple[str, str | None]]:
@@ -1384,6 +1465,39 @@ def _log_robot(traj: JointTrajectory, plan: _RobotPlan, recording: rr.RecordingS
     recording.log(f"/world/{part}/tool/ends", rr.Points3D([xyz[0], xyz[-1]], labels=["start", "end"],
                                                           colors=[_LABEL_START, _LABEL_END], radii=[0.009]),
                   frame, static=True)  # fmt: skip
+    _log_extras(plan, recording, frame)
+
+
+_FORCE = (196, 40, 130)  # one magenta for the force arrow (traj_compare's error magenta is a different meaning there)
+
+
+def _log_extras(plan: _RobotPlan, recording: rr.RecordingStream, frame: Any) -> None:
+    """The opt-in extras of `_RobotPlan._extras`: each wrench's arrow and series, each plot's series, the events."""
+    part = plan.part
+    for label, wpart, seconds, forces, origins in plan.wrenches:
+        rows_ = np.unique(np.linspace(0, len(seconds) - 1, min(len(seconds), _ROWS)).round().astype(int))
+        magnitude = np.linalg.norm(forces, axis=1)
+        entity = f"/world/{part}/wrenches/{wpart}"
+        recording.log(entity, rr.Arrows3D.from_fields(colors=[_FORCE], radii=[0.006]), frame, static=True)
+        recording.send_columns(entity, indexes=[rr.TimeColumn(TIMELINE, duration=seconds[rows_])],
+                               columns=rr.Arrows3D.columns(origins=origins[rows_],
+                                                           vectors=forces[rows_] * plan.force_scale,
+                                                           labels=[f"{label} {m:.1f} N" for m in magnitude[rows_]]))
+        on = [rr.TimeColumn(TIMELINE, duration=seconds)]
+        axes = f"/wrench/{wpart}/force"
+        recording.log(axes, rr.SeriesLines(names=["x", "y", "z"], colors=list(_AXIS_COLORS)), static=True)
+        recording.send_columns(axes, indexes=on, columns=rr.Scalars.columns(scalars=forces.reshape(-1))
+                               .partition([3] * len(seconds)))  # fmt: skip
+        norm = f"/wrench/{wpart}/magnitude"
+        recording.log(norm, rr.SeriesLines(names="|F|", colors=(30, 30, 30), widths=2.0), static=True)
+        recording.send_columns(norm, indexes=on, columns=rr.Scalars.columns(scalars=magnitude))
+    for entity, _, line, values in plan.plots:
+        recording.log(entity, rr.SeriesLines(names=line), _dots(line, None), static=True)
+        recording.send_columns(entity, indexes=[rr.TimeColumn(TIMELINE, duration=plan.seconds)],
+                               columns=rr.Scalars.columns(scalars=values))
+    if plan.events:
+        recording.send_columns("/events", indexes=[rr.TimeColumn(TIMELINE, duration=[at for at, _ in plan.events])],
+                               columns=rr.TextLog.columns(text=[text for _, text in plan.events]))
 
 
 def _plot_view(strip: _Strip) -> Any:
@@ -1416,6 +1530,8 @@ def _tab_views(plan: _JointPlan) -> list[Any]:
             card_rows = -(-len(strips) // columns)
             tabs.append(rrb.Vertical(table, rrb.Grid(*(plot(s) for s in strips), grid_columns=columns),
                                      row_shares=[len(plan.joints) + 5, 8 * card_rows], name=name))  # fmt: skip
+        elif name == "Events" and getattr(plan, "events", None):
+            tabs.append(rrb.Vertical(rrb.TextLogView(origin="/events", name="Events"), name=name))
         else:
             tabs.append(rrb.Vertical(*(plot(s) for s in strips), name=name))
     return tabs
@@ -1445,12 +1561,16 @@ def robot_blueprint(
     robot: str | Path,
     tool: PoseTrajectory | None = None,
     ghosts: bool = True,
+    wrenches: Mapping[str, WrenchTrajectory] | None = None,
+    events: Sequence[tuple[float, str]] | None = None,
+    plots: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
 ) -> Any:
     """The dashboard of ``log(traj, name, robot=robot, tool=tool)``, for a recording you make yourself
     (``stream.save(path, default_blueprint=robot_blueprint(...))``): the arm on the left half, and tabs on the right
     half: q, qd, qdd, qddd (a strip per joint in degrees with its limits), q / qd / qdd (each joint's three as % of its
     limits, under a table of the values at the playhead) and TCP. A tab whose data the message lacks is left out."""
-    return _robot_dashboard(_robot_plan(traj, name or type(traj).__name__, robot, tool), ghosts=ghosts)
+    plan = _robot_plan(traj, name or type(traj).__name__, robot, tool, wrenches=wrenches, events=events, plots=plots)
+    return _robot_dashboard(plan, ghosts=ghosts)
 
 
 # WHY (Zach, 2026-11-25): "when we are look at just a normal trajectory without comparison than I think it makes sense
