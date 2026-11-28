@@ -9,6 +9,11 @@ as three primitive step kinds (`Command`, `Delay`, `Condition`), built with the 
 `JointCommandController`: the one writer to the servos (stop, brake, hold, follow; one writer per joint; hold,
 don't drop). The 0.3 `JointCommandSequenceController` still runs step sequences as before.
 
+`robot_msgs.control.recipe` is the short way to write those helper calls: one vocabulary of keywords that say
+what each number is (`pos`, `by`, `vel`, `max_tau`, `ff`, ...), a `Joint` that carries its defaults
+(`J2.move_by(deg(20))`), a `Group` addressed all / a set / one (`Arm.stop()`, `Arm[ALL]`, `Arm["elbow"]`) and
+tview-style text lines (`script("elbow> move_by 20deg")`). Same primitives; only `call` reads as written.
+
 A `JointTable` is the thin Arm between them and the bus: joint name -> `Servo` (bus, CAN id,
 sign, offset), so controllers address joints by name and only the table knows a CAN id.
 """
@@ -66,6 +71,10 @@ from robot_msgs.control.sequence_controller import (
     StepEvent,
 )
 
+# isort: split
+# WHY last: recipe is a way to WRITE helpers' primitives (short keywords, Joint, Group, text lines).
+from robot_msgs.control import recipe
+
 __all__ = [
     "ALL_JOINTS",
     "Command",
@@ -107,5 +116,6 @@ __all__ = [
     "Stall",
     "StepEvent",
     "parse_servo_key",
+    "recipe",
     "servo_key",
 ]

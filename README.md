@@ -187,6 +187,33 @@ stamped by every helper), and `helpers.step("Home the elbow", find_hardstop(...)
 your own words as `label`. `helpers.outline(recipe)` reads them back as rows of label > call >
 primitives, which is what a log or a viewer shows first, with the three primitive kinds one level lower.
 
+`robot_msgs.control.recipe` is the short way to write the same recipe, so every number says what it is.
+One vocabulary of keywords (`pos` `by` rad, `vel` rad/s, `max_tau` `ff` `tau` N·m, `tol`, `dir`, `travel`,
+`timeout`, `repeats`, `define`; `recipe.signature("move_by")` lists a verb's own), a `Joint` that declares
+its defaults once, a `Group` addressed all / a set / one as moteus tview does (`A>`, `11,12>`, `11>`), and
+tview-style text lines. Each calls the helper of the same name, so the primitives are identical; only
+`call` reads as the step was written.
+
+```python
+from robot_msgs.control.recipe import ALL, Group, Joint, deg, script, wait
+
+J1 = Joint("shoulder", max_tau=12, ff=5)            # defaults, declared once
+J2 = Joint("elbow", vel=0.5, max_tau=3, id=12)
+Arm = Group(J1, J2, name="Arm")
+
+J1.hold()                                            # a keyword left out takes the joint's default
+J2.find_hardstop(dir=-1, travel=1.0, define=deg(-135))
+J2.move_by(deg(20), max_tau=8)                       # ... and one on the step overrides it
+Arm.stop()                                           # ONE Command to every joint; also stop(Arm)
+Arm[ALL].limp(); Arm[J1, J2].brake(); Arm[12].hold() # all, a set, or one (by Joint, name or id)
+script("""
+    Park 20° off the stop:                           # a label for the indented steps under it
+        elbow> move_by 20deg max_tau=8
+        wait 0.3
+    A> stop
+""", joints=Arm)
+```
+
 ## Packages
 
 | Import | Types |
@@ -194,7 +221,7 @@ primitives, which is what a log or a viewer shows first, with the three primitiv
 | `robot_msgs.std` | `Header` `ColorRGBA` · a running component's own reports: `LogRecord` `DiagnosticRecord` `Metrics` |
 | `robot_msgs.geometry` | `Vector3` `Point` `Quaternion` `Pose` `Pose2D` `Transform` `Twist` `Wrench` `Accel` `Inertia` `PoseStamped` `TransformStamped` · batch maths in `geometry.rotations` (incl. direct `euler_to_matrix` / `matrix_to_euler`) |
 | `robot_msgs.sensor` | `JointState` `Image` `CameraInfo` `CameraSettings` `PointCloud` `Imu` |
-| `robot_msgs.control` | `ServoState` `ServoCommand` (per-servo `mode`: `SERVO_MODES`) · routines as data: `JointCommand`, the primitives `Command` `Delay` `Condition` (+ `Record` `Reduce` `FailWhen`, predicates `InCollision` `TravelEnd` `FollowEnded` `Reached` `Settled` `Stall` `EffortStall` `Elapsed`), `JointCommandSequence`; helper functions in `control.helpers` (`find_hardstop` `move_to` `hold` `stop_all` `follow` `wait_until` `at_once` ...); `JointCommandController` (the one writer to the servos) · the Arm's `JointTable` (joint name -> `Servo`: bus, CAN id, sign, offset; `to_servos` / `to_joints` / `with_zero`) |
+| `robot_msgs.control` | `ServoState` `ServoCommand` (per-servo `mode`: `SERVO_MODES`) · routines as data: `JointCommand`, the primitives `Command` `Delay` `Condition` (+ `Record` `Reduce` `FailWhen`, predicates `InCollision` `TravelEnd` `FollowEnded` `Reached` `Settled` `Stall` `EffortStall` `Elapsed`), `JointCommandSequence`; helper functions in `control.helpers` (`find_hardstop` `move_to` `hold` `stop_all` `follow` `wait_until` `at_once` ...); the short way to write them in `control.recipe` (`Joint` `Group` `script`, keywords `pos` `by` `vel` `max_tau` `ff` ...); `JointCommandController` (the one writer to the servos) · the Arm's `JointTable` (joint name -> `Servo`: bus, CAN id, sign, offset; `to_servos` / `to_joints` / `with_zero`) |
 | `robot_msgs.shape` | `SolidPrimitive` (box, sphere, cylinder, cone, prism: `volume` `inertia` `bounding_box` `contains` `to_mesh`) `Mesh` `Plane` `MeshResource` (a URDF-style file reference; no ROS message) |
 | `robot_msgs.manipulation` | `GraspPose` `Waypoint` `WaypointAction` `CartesianLimits` `NamedPose` `AllowedCollisionMatrix` · `CollisionScene` of `CollisionElement`s (moveit_msgs PlanningScene / CollisionObject; each element tagged scene / object / self, fixed / moving, rigid / deformable, with a `margin` and a `contact` policy, v1 `avoid`; checked and viewed by robot_collision) |
 | `robot_msgs.behavior` | `BTState` (a behaviour tree's node statuses by path, JSON blackboard, tick, clock) |
