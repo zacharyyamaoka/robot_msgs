@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from robot_msgs import from_dict, to_dict
-from robot_msgs.control import ServoCommand, ServoState
+from robot_msgs.control import SERVO_MODES, ServoCommand, ServoState
 from robot_msgs.sensor import JointState
 from robot_msgs.std import Header
 
@@ -47,10 +47,34 @@ def test_nan_position_means_no_position_target():
 
 
 @pytest.mark.parametrize("field", ["stiffness", "damping", "max_effort"])
-@pytest.mark.parametrize("bad", [-1.0, np.nan])
+@pytest.mark.parametrize("bad", [-1.0, -np.inf])
 def test_gains_and_limits_must_be_non_negative(field, bad):
     with pytest.raises(ValueError, match=field):
         ServoCommand(name=NAMES, position=[0.0, 0.0], **{field: [1.0, bad]})
+
+
+@pytest.mark.parametrize("field", ["stiffness", "damping", "max_effort"])
+def test_nan_gain_or_cap_means_that_servos_board_default(field):
+    # WHY (0.8, the Joint Command Controller barrier): one joint at zero gains must not force every other
+    # board's gains into the controller's config; NaN keeps that one servo's configured value
+    command = ServoCommand(name=NAMES, position=[0.0, 0.0], **{field: [0.0, np.nan]})
+    assert getattr(command, field)[0] == 0.0 and np.isnan(getattr(command, field)[1])
+
+
+def test_mode_per_servo_defaults_to_position():
+    plain = ServoCommand(name=NAMES, position=[0.0, 0.0])
+    assert plain.mode is None and plain.mode_of(NAMES[1]) == "position"
+    stopped = ServoCommand(name=NAMES, position=[np.nan, 0.0], mode=["stop", "position"])
+    assert stopped.mode == ("stop", "position")
+    assert stopped.mode_of(NAMES[0]) == "stop"
+    assert SERVO_MODES == ("position", "stop", "brake")
+
+
+def test_mode_is_checked_at_construction():
+    with pytest.raises(ValueError, match="mode has 1 values"):
+        ServoCommand(name=NAMES, position=[0.0, 0.0], mode=["stop"])
+    with pytest.raises(ValueError, match="limp"):
+        ServoCommand(name=NAMES, position=[0.0, 0.0], mode=["limp", "position"])
 
 
 @pytest.mark.parametrize("cls", [ServoState, ServoCommand])

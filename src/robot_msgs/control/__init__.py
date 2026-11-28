@@ -11,7 +11,7 @@ from robot_msgs.control.servo_state import ServoState
 
 # isort: split
 # WHY after ServoState: servo_command imports ServoState for `from_state`.
-from robot_msgs.control.servo_command import ServoCommand
+from robot_msgs.control.servo_command import SERVO_MODES, ServoCommand
 
 # isort: split
 from robot_msgs.control.joint_command import (
@@ -42,6 +42,7 @@ __all__ = [
     "JointCommandStep",
     "JointController",
     "Reached",
+    "SERVO_MODES",
     "ServoCommand",
     "ServoState",
     "Settled",

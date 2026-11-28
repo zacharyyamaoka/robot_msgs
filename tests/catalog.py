@@ -375,6 +375,15 @@ EXAMPLES = [
         state_seq=812,
         header=HEADER.replace(stamp=HEADER.stamp + 0.0021),
     ),
+    # WHY a second ServoCommand (0.8): a stop, a brake and a board-default gain/cap round-trip too
+    ServoCommand(
+        name=NAMES,
+        position=[float("nan"), float("nan"), 0.3],
+        stiffness=[0.0, 0.0, float("nan")],
+        max_effort=[0.0, 0.0, float("nan")],
+        mode=("stop", "brake", "position"),
+        header=HEADER,
+    ),
     JointCommand.to("j2", 1.9, speed=0.3, max_effort=4.0, feedforward_effort=0.5),
     Elapsed(duration=3.0),
     Settled(joints=("j2", "c1"), speed=0.01, dwell=0.5),
