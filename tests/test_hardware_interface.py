@@ -187,3 +187,16 @@ def test_arm_names_still_import():
     from robot_msgs.control import Arm, ArmBackend, ArmDeployment
 
     assert Arm is HardwareInterface and ArmBackend is HardwareBackend and ArmDeployment is HardwareDeployment
+
+
+def test_truth_meta_carries_what_only_some_oracles_know():
+    """`truth.meta`: the untyped rest of what an oracle knows; it round-trips and travels through select()."""
+    from robot_msgs.control import select
+
+    truth = GroundTruth(name=("a/j1", "b/j1"), position=[0.1, 0.2], source="mujoco",
+                        meta={"contacts": 3, "object/cap.z": 0.012})
+    assert truth.meta["contacts"] == 3
+    assert from_dict(truth.to_dict(), GroundTruth).meta == truth.meta
+    state = ServoState(name=("a/j1", "b/j1"), position=[0.1, 0.2], truth=truth)
+    assert select(state, "a").truth.meta == truth.meta
+    assert GroundTruth(name=("j",), position=[0.0]).meta == {}
