@@ -18,6 +18,10 @@ A `JointTable` is the thin Arm between them and the bus: joint name -> `Servo` (
 sign, offset), so controllers address joints by name and only the table knows a CAN id. An `Arm` is that table in
 front of a backend (`ArmDeployment`: ``Arm(UR5E, backend="sim")`` / ``"real"``), and a simulated `ServoState`
 carries the simulator's `GroundTruth` in `truth` (None on real).
+
+Joint names are cell-unique slash paths (`robot_msgs.control.joint_path`): an arm's table names `shoulder`,
+`JointTable.mounted("right_arm")` makes it `right_arm/shoulder`, `JointTable.combine` joins arms into one cell
+table, and `select(command, "right_arm")` is the same joint-named message viewed at one level (all / a set / one).
 """
 
 from robot_msgs.control.ground_truth import GroundTruth
@@ -28,7 +32,9 @@ from robot_msgs.control.servo_state import ServoState
 from robot_msgs.control.servo_command import SERVO_MODES, ServoCommand
 
 # isort: split
-# WHY after ServoCommand: joint_table maps ServoCommand / ServoState.
+# WHY after ServoCommand: joint_path and joint_table filter / map ServoCommand / ServoState.
+from robot_msgs.control import joint_path
+from robot_msgs.control.joint_path import add_prefix, is_under, join_path, select, split_path, strip_prefix
 from robot_msgs.control.joint_table import JointTable, Servo, parse_servo_key, servo_key
 
 # isort: split
@@ -122,6 +128,13 @@ __all__ = [
     "Servo",
     "ServoCommand",
     "ServoState",
+    "add_prefix",
+    "is_under",
+    "join_path",
+    "joint_path",
+    "select",
+    "split_path",
+    "strip_prefix",
     "Settled",
     "EffortStall",
     "Stall",

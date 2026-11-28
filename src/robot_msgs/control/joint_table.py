@@ -31,6 +31,7 @@ from typing import Any
 import numpy as np
 
 from robot_msgs._core import FrozenDict, Msg, set_field
+from robot_msgs.control.joint_path import join_path, matching, split_path, strip_path
 from robot_msgs.control.servo_command import ServoCommand
 from robot_msgs.control.servo_state import ServoState
 
@@ -172,6 +173,57 @@ class JointTable(Msg):
                 for name, servo in self.joints.items()
             }
         )
+
+    def mounted(self, prefix: str) -> JointTable:
+        """This table mounted into a cell under `prefix`: ``shoulder`` -> ``right_arm/shoulder``.
+
+        Servos are unchanged, and each one is pinned to its resolved bus (its own, else this table's), so the
+        mounted table still says where every board is once `combine` drops the per-table default.
+        WHY (Zach, Daily Note 2026-11-28: "cell.right_arm.shoulder_joint.command() ... address at the
+        different levels you want"): an arm's own table names joints bare, and the cell adds the prefix, so
+        one arm description serves as left or right. See `robot_msgs.control.joint_path`.
+        """
+        if not split_path(prefix):
+            raise ValueError("JointTable.mounted needs a non-empty prefix")
+        return JointTable(
+            joints={join_path(prefix, name): self._resolved(name) for name in self.joints}
+        )
+
+    def subtree(self, prefix: str, *, strip: bool = True) -> JointTable:
+        """The joints under `prefix` (segment-safe), by default with the prefix removed: `mounted`'s inverse.
+
+        ``cell.subtree("right_arm")`` is the right arm's own table again (bare names, each servo on its
+        resolved bus). `strip=False` keeps the cell names. A prefix with no joint under it raises.
+        """
+        names = matching(self.joints, prefix)
+        rename = (lambda n: strip_path(n, prefix)) if strip else (lambda n: n)
+        return JointTable(joints={rename(name): self._resolved(name) for name in names})
+
+    @classmethod
+    def combine(cls, *tables: JointTable) -> JointTable:
+        """Several (mounted) tables as one cell table, in argument order.
+
+        Refuses a joint name in two tables and two joints on one servo `(bus, can_id)` — the same board
+        claimed twice, e.g. two arms mounted with neither bus set. Each servo keeps its resolved bus.
+        """
+        joints: dict[str, Servo] = {}
+        owner: dict[str, int] = {}
+        for index, table in enumerate(tables):
+            if not isinstance(table, JointTable):
+                raise TypeError(f"JointTable.combine takes JointTables, got {type(table).__name__}")
+            for name in table.joints:
+                if name in joints:
+                    raise ValueError(
+                        f"JointTable.combine: joint {name!r} is in tables {owner[name]} and {index}"
+                    )
+                joints[name] = table._resolved(name)
+                owner[name] = index
+        # The constructor refuses a shared (bus, can_id) and names both joints.
+        return cls(joints=joints)
+
+    def _resolved(self, joint: str) -> Servo:
+        servo = self._servo(joint)
+        return servo if servo.bus is not None or self.bus is None else servo.replace(bus=self.bus)
 
     def to_servos(self, message: ServoCommand | ServoState) -> ServoCommand | ServoState:
         """A joint-named command or state -> the same message named by servo key, in the board's frame.
