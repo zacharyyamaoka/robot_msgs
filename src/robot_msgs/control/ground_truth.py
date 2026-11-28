@@ -15,8 +15,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from collections.abc import Mapping
-from typing import Any
-
 from robot_msgs._core import Array, FrozenDict, Msg, frozen_array, optional_array, set_field
 from robot_msgs.std import Header
 
@@ -32,7 +30,9 @@ class GroundTruth(Msg):
     - `stop_effort`: the torque a hard stop pushes back with (0 = not touching one); `None` when the scene has none.
     - `source`: which oracle said so (``"mujoco"``): the sensor that produces truth, present on some backends only.
     - `meta`: everything else that oracle knows and not every oracle can give (contacts, object poses, solver stats),
-      a flat ``str -> value`` mapping, untyped on purpose.
+      a flat ``str -> float`` mapping (a pose is flattened: ``"object/cap.z"``), open on purpose.
+      WHY float and not Any: like_keras's wire layout carries only typed values (its CONTRACT §7.1), and an `Any`
+      made every attached core fail to encode ServoState (4137538); the same shape as like_keras `Metrics.custom`.
 
     WHY the state's own field names plus `meta` (Zach, Daily Note 2026-11-28): "I think it would be nice if the
     structure of truth is similar to that of the state... truth could almost just match state exact but just with
@@ -48,7 +48,7 @@ class GroundTruth(Msg):
     effort: Array | None = None
     stop_effort: Array | None = None
     source: str = ""
-    meta: Mapping[str, Any] = field(default_factory=dict)
+    meta: Mapping[str, float] = field(default_factory=dict)
     header: Header = field(default_factory=Header)
 
     def __post_init__(self) -> None:
@@ -61,7 +61,7 @@ class GroundTruth(Msg):
         for field_name in _OPTIONAL:
             set_field(self, field_name, optional_array(getattr(self, field_name)))
         set_field(self, "source", str(self.source))
-        set_field(self, "meta", FrozenDict((str(key), value) for key, value in dict(self.meta).items()))
+        set_field(self, "meta", FrozenDict((str(key), float(value)) for key, value in dict(self.meta).items()))
         for field_name in ("position", *_OPTIONAL):
             values = getattr(self, field_name)
             if values is None:

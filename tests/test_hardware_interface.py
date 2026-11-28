@@ -195,6 +195,7 @@ def test_truth_meta_carries_what_only_some_oracles_know():
 
     truth = GroundTruth(name=("a/j1", "b/j1"), position=[0.1, 0.2], source="mujoco",
                         meta={"contacts": 3, "object/cap.z": 0.012})
+    assert isinstance(truth.meta["contacts"], float)
     assert truth.meta["contacts"] == 3
     assert from_dict(truth.to_dict(), GroundTruth).meta == truth.meta
     state = ServoState(name=("a/j1", "b/j1"), position=[0.1, 0.2], truth=truth)
