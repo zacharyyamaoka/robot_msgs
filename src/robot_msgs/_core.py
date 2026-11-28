@@ -427,6 +427,10 @@ def _decode(value: Any, hint: Any, arrays: Mapping[str, np.ndarray] | None) -> A
         return {k: _decode(v, value_hint, arrays) for k, v in value.items()}
     if hint is Any and isinstance(value, Mapping) and ("npz" in value or "dtype" in value):
         return _decode_array(value, arrays)
+    # WHY: a field typed Any that holds messages (JointCommandSequence.steps: steps or primitives, 0.8)
+    # decodes each by its "_type" key, as a union does
+    if hint is Any and isinstance(value, Mapping) and "_type" in value:
+        return from_dict(value, arrays=arrays)
     return value
 
 

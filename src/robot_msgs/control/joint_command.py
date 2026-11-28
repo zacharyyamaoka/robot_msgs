@@ -11,6 +11,12 @@ five-bar blind homing): homing drives into contacts and waits for stalls, so whe
 measured, not planned. The description (this data) stays apart from the execution (the
 controller), the "story teller" pattern of bam_controllers.
 
+Since 0.8 a sequence may also be written as the three primitive step kinds Zach designed in Dec 2025
+(`Command`, `Delay`, `Condition`, in `robot_msgs.control.primitives`), built by the helper FUNCTIONS in
+`robot_msgs.control.helpers` and run by `JointCommandController`. A `JointCommandStep` is itself sugar for
+primitives (`JointCommandSequence.primitives`). `JointCommand` grew the modes a trajectory cannot carry:
+`velocity`, `effort`, `stop`, `brake`, `define`, `follow`.
+
 Units are SI: rad (or m) for positions and distances, rad/s for speeds, N·m (or N) for efforts,
 s for durations.
 """
@@ -20,12 +26,25 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from robot_msgs._core import FrozenDict, Msg, set_field
 
-Mode = Literal["limp", "hold", "move_by", "position"]
-MODES: tuple[str, ...] = ("limp", "hold", "move_by", "position")
+if TYPE_CHECKING:
+    from robot_msgs.trajectory import JointTrajectory
+
+# WHY Any for `trajectory` below, not JointTrajectory: robot_msgs.trajectory imports control, and
+# from_dict reads the type hints at run time; a message under Any decodes by its "_type" key
+Mode = Literal[
+    "limp", "hold", "move_by", "position", "velocity", "effort", "stop", "brake", "define", "follow"
+]
+MODES: tuple[str, ...] = (
+    "limp", "hold", "move_by", "position", "velocity", "effort", "stop", "brake", "define", "follow"
+)
+SEQUENCE_CONTROLLER_MODES: tuple[str, ...] = ("limp", "hold", "move_by", "position")
+"""The modes `JointCommandSequenceController` (0.3-0.7) runs; the rest need `JointCommandController`."""
+ALL_JOINTS = "*"
+"""`JointCommand(joint=ALL_JOINTS, mode="stop")`: every joint the controller drives (limp / stop / brake only)."""
 
 
 def _positive(owner: str, name: str, value: float | None) -> float:
@@ -43,8 +62,20 @@ class JointCommand(Msg):
     - `move_by`: ramp the setpoint by `distance` from where the step starts, at `speed`.
     - `position`: ramp the setpoint to `position`, at `speed` (needs a defined position).
 
-    Every mode except `limp` needs `max_effort` (the drive's output cap, N·m or N) and may add a
+    `hold`, `move_by` and `position` need `max_effort` (the drive's output cap, N·m or N) and may add a
     constant `feedforward_effort` (e.g. the static gravity torque at a waypoint).
+
+    Since 0.8 (run by `JointCommandController` only):
+
+    - `velocity`: a host-ramped setpoint leading at `velocity` (rad/s) under `max_effort`, no end.
+    - `effort`: pure torque `feedforward_effort` (no position target, zero gains); cap `max_effort`
+      (None = |effort|).
+    - `stop` / `brake`: the board's stop (driver off; clears a fault and a watchdog latch) or brake
+      (windings shorted). `joint` may be `ALL_JOINTS`, as may `limp`'s.
+    - `define`: "your position is now `position`" (moteus set_output_exact); the joint keeps what it
+      was doing, re-framed. With nothing commanded it holds under `max_effort` (None = board cap).
+    - `follow`: play `trajectory` (t = 0 when the Command runs) on this joint under `max_effort`
+      (None = board cap). Joints of one Command that share a trajectory follow it together.
     """
 
     joint: str
@@ -54,22 +85,40 @@ class JointCommand(Msg):
     speed: float | None = None
     max_effort: float | None = None
     feedforward_effort: float = 0.0
+    velocity: float | None = None
+    trajectory: Any = None  # a JointTrajectory (Any: robot_msgs.trajectory imports control)
 
     def __post_init__(self) -> None:
         set_field(self, "joint", str(self.joint))
         if self.mode not in MODES:
             raise ValueError(f"JointCommand {self.joint}: mode {self.mode!r} is not one of {MODES}")
-        for name in ("position", "distance", "speed", "max_effort"):
+        for name in ("position", "distance", "speed", "max_effort", "velocity"):
             value = getattr(self, name)
             if value is not None:
                 set_field(self, name, float(value))
         set_field(self, "feedforward_effort", float(self.feedforward_effort))
-        if self.mode == "limp":
-            return
         owner = f"JointCommand {self.joint}"
-        _positive(owner, "max_effort", self.max_effort)
+        if self.joint == ALL_JOINTS and self.mode not in ("limp", "stop", "brake"):
+            raise ValueError(f"{owner}: only limp, stop and brake may name every joint")
+        if self.mode in ("limp", "stop", "brake"):
+            return
         if not math.isfinite(self.feedforward_effort):
             raise ValueError(f"{owner}: feedforward_effort must be finite")
+        if self.mode in ("effort", "define", "follow"):
+            if self.max_effort is not None:
+                _positive(owner, "max_effort", self.max_effort)
+            if self.mode == "define" and (self.position is None or not math.isfinite(self.position)):
+                raise ValueError(f"{owner}: define needs a finite position")
+            if self.mode == "follow":
+                names = getattr(self.trajectory, "joint_names", None)
+                if names is None or self.joint not in names:
+                    raise ValueError(f"{owner}: follow needs a JointTrajectory that names {self.joint!r}")
+            return
+        _positive(owner, "max_effort", self.max_effort)
+        if self.mode == "velocity":
+            if self.velocity is None or not math.isfinite(self.velocity):
+                raise ValueError(f"{owner}: velocity mode needs a finite velocity")
+            return
         if self.mode in ("move_by", "position"):
             _positive(owner, "speed", self.speed)
         if self.mode == "move_by" and (
@@ -132,6 +181,46 @@ class JointCommand(Msg):
             max_effort=max_effort,
             feedforward_effort=feedforward_effort,
         )
+
+    @classmethod
+    def at_velocity(
+        cls, joint: str, velocity: float, *, max_effort: float, feedforward_effort: float = 0.0
+    ) -> JointCommand:
+        """Seek `joint` at `velocity` (a host ramp, no end), under `max_effort`."""
+        return cls(
+            joint=joint,
+            mode="velocity",
+            velocity=velocity,
+            max_effort=max_effort,
+            feedforward_effort=feedforward_effort,
+        )
+
+    @classmethod
+    def effort(cls, joint: str, effort: float, *, max_effort: float | None = None) -> JointCommand:
+        """Pure torque `effort` on `joint` (zero gains, no position target)."""
+        return cls(joint=joint, mode="effort", feedforward_effort=effort, max_effort=max_effort)
+
+    @classmethod
+    def stop(cls, joint: str = ALL_JOINTS) -> JointCommand:
+        """The board's stop on `joint` (default: every joint)."""
+        return cls(joint=joint, mode="stop")
+
+    @classmethod
+    def brake(cls, joint: str = ALL_JOINTS) -> JointCommand:
+        """The board's brake on `joint` (default: every joint)."""
+        return cls(joint=joint, mode="brake")
+
+    @classmethod
+    def define(cls, joint: str, position: float, *, max_effort: float | None = None) -> JointCommand:
+        """'Your position is now `position`' (set_output_exact)."""
+        return cls(joint=joint, mode="define", position=position, max_effort=max_effort)
+
+    @classmethod
+    def follow(
+        cls, joint: str, trajectory: JointTrajectory, *, max_effort: float | None = None
+    ) -> JointCommand:
+        """Play `trajectory`'s column for `joint`."""
+        return cls(joint=joint, mode="follow", trajectory=trajectory, max_effort=max_effort)
 
 
 # ── done-when conditions ─────────────────────────────────────────────────────
@@ -293,32 +382,105 @@ class JointCommandStep(Msg):
 
 @dataclass(frozen=True, eq=False, repr=False, kw_only=True)
 class JointCommandSequence(Msg):
-    """The steps in order for joints `joint_names`, plus one abort guard for every step.
+    """A recipe read top to bottom: `steps` are `JointCommandStep`s or (0.8) the primitives `Command`,
+    `Delay`, `Condition`; lists inside `steps` are flattened, so helper calls compose directly:
+    `JointCommandSequence(steps=[find_hardstop(...), move_to(...)])`.
 
-    `max_speed` (rad/s or m/s): the sequence aborts when a POWERED joint is driven faster than
-    this (its effort and velocity the same sign). A limp joint, or one its drive is braking, is
-    moving under gravity, which a homing routine may use on purpose, and may go faster.
+    `joint_names`: the joints it drives; `()` (0.8) = every joint it names. A `JointCommandStep`'s
+    unnamed joints go limp, so a sequence of steps needs `joint_names`.
+
+    `max_speed` (rad/s or m/s, None = no guard): a POWERED joint driven faster than this (its effort
+    and velocity the same sign) trips the guard. A limp joint, or one its drive is braking, is moving
+    under gravity, which a homing routine may use on purpose, and may go faster. `guard_policy`
+    (`JointCommandController`): `log` records it and keeps going (Zach's 2026-11-13 ruling), `abort`
+    ends the sequence and holds. `JointCommandSequenceController` always aborts.
     """
 
-    joint_names: tuple[str, ...]
-    steps: tuple[JointCommandStep, ...]
+    joint_names: tuple[str, ...] = ()
+    steps: tuple[Any, ...]
     name: str = ""
-    max_speed: float = 3.0
+    max_speed: float | None = 3.0
+    guard_policy: Literal["log", "abort"] = "log"
 
     def __post_init__(self) -> None:
+        from robot_msgs.control.primitives import PRIMITIVES
+
         set_field(self, "joint_names", tuple(str(j) for j in self.joint_names))
-        set_field(self, "steps", tuple(self.steps))
+        steps = tuple(_flatten(self.steps))
+        set_field(self, "steps", steps)
         set_field(self, "name", str(self.name))
-        if not self.steps:
+        if not steps:
             raise ValueError("JointCommandSequence needs at least one step")
+        for step in steps:
+            if not isinstance(step, (JointCommandStep, *PRIMITIVES)):
+                raise TypeError(
+                    f"JointCommandSequence: {type(step).__name__} is not a JointCommandStep, "
+                    "Command, Delay or Condition"
+                )
         known = set(self.joint_names)
         if len(known) != len(self.joint_names):
             raise ValueError(f"JointCommandSequence.joint_names has duplicates: {self.joint_names}")
-        for step in self.steps:
-            unknown = {command.joint for command in step.commands} - known
+        if any(isinstance(step, JointCommandStep) for step in steps) and not self.joint_names:
+            raise ValueError("a JointCommandSequence of JointCommandSteps needs joint_names")
+        if self.joint_names:
+            unknown = set(self._named()) - known
             if unknown:
-                raise ValueError(f"step {step.name!r}: unknown joints {sorted(unknown)}")
-        set_field(self, "max_speed", _positive("JointCommandSequence", "max_speed", self.max_speed))
+                raise ValueError(f"JointCommandSequence {self.name!r}: unknown joints {sorted(unknown)}")
+        if self.max_speed is not None:
+            set_field(self, "max_speed", _positive("JointCommandSequence", "max_speed", self.max_speed))
+        if self.guard_policy not in ("log", "abort"):
+            raise ValueError(f"guard_policy is log or abort, got {self.guard_policy!r}")
 
     def __len__(self) -> int:
         return len(self.steps)
+
+    @property
+    def primitives(self) -> tuple[Any, ...]:
+        """The recipe as `Command` / `Delay` / `Condition` only: what `JointCommandController` runs.
+
+        A `JointCommandStep` becomes a Command (its commands, limp for the joints it does not name), a
+        Condition (any of its `done_when`, its `timeout`) and, with `define_position`, a define Command."""
+        from robot_msgs.control.primitives import Command, Condition
+
+        out: list[Any] = []
+        for step in self.steps:
+            if not isinstance(step, JointCommandStep):
+                out.append(step)
+                continue
+            named = {command.joint for command in step.commands}
+            limp = tuple(JointCommand.limp(j) for j in self.joint_names if j not in named)
+            out.append(Command(step.commands + limp, name=step.name))
+            out.append(Condition(step.done_when, mode="any", timeout=step.timeout, name=step.name))
+            if step.define_position:
+                defines = tuple(JointCommand.define(j, v) for j, v in step.define_position.items())
+                out.append(Command(defines, name=step.name))
+        return tuple(out)
+
+    @property
+    def joints(self) -> tuple[str, ...]:
+        """Every joint it commands or watches, first-named order (`ALL_JOINTS` left out)."""
+        return self.joint_names or self._named()
+
+    def _named(self) -> tuple[str, ...]:
+        from robot_msgs.control.primitives import Command, Condition
+
+        seen: dict[str, None] = {}
+        for primitive in self.primitives:
+            if isinstance(primitive, Command):
+                names: tuple[str, ...] = primitive.joints
+            elif isinstance(primitive, Condition):
+                names = primitive.watched()
+            else:
+                names = ()
+            for joint in names:
+                if joint != ALL_JOINTS:
+                    seen.setdefault(joint, None)
+        return tuple(seen)
+
+
+def _flatten(items: Any) -> Any:
+    for item in items:
+        if isinstance(item, (list, tuple)):
+            yield from _flatten(item)
+        else:
+            yield item

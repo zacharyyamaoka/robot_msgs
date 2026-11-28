@@ -23,6 +23,7 @@ from robot_msgs.control.joint_command import (
     Elapsed,
     JointCommand,
     JointCommandSequence,
+    SEQUENCE_CONTROLLER_MODES,
     JointCommandStep,
     Reached,
     EffortStall,
@@ -81,6 +82,17 @@ class JointCommandSequenceController:
     _timers: dict[tuple[int, str], float] = field(default_factory=dict, repr=False)
     _step_started: float = 0.0
     _started: bool = False
+
+    def __post_init__(self) -> None:
+        # WHY refuse, not misrun (0.8): the new modes and the primitives are JointCommandController's; this
+        # controller's ramp would treat a stop or a velocity seek as a hold
+        for step in self.sequence.steps:
+            modes = {c.mode for c in getattr(step, "commands", ())} - set(SEQUENCE_CONTROLLER_MODES)
+            if not isinstance(step, JointCommandStep) or modes:
+                raise ValueError(
+                    f"JointCommandSequenceController runs JointCommandSteps of {SEQUENCE_CONTROLLER_MODES}; "
+                    f"use JointCommandController for {type(step).__name__} {sorted(modes)}"
+                )
 
     @property
     def step(self) -> JointCommandStep:

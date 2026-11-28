@@ -158,6 +158,29 @@ Streams are trajectories: `ServoStateTrajectory`, `ServoCommandTrajectory`, `Imu
 from its message log (`ServoStateTrajectory.from_servo_states(states)`). Rules and every metric
 name: [docs/DESIGN.md](docs/DESIGN.md), "Comparing trajectories".
 
+## Joint commands: a recipe the controller checks as it runs
+
+```python
+from robot_msgs.control import JointCommandController, JointCommandSequence
+from robot_msgs.control.helpers import find_hardstop, hold, move_to, stop_all
+
+recipe = JointCommandSequence(name="home elbow, then park", steps=[
+    hold("shoulder", max_effort=12.0),
+    find_hardstop("elbow", direction=-1, max_vel=0.3, max_effort=3.0, max_travel=1.2,
+                  repeats=3, define=-2.356),          # 3 touches, mean defines; spread > 1 mrad refuses
+    move_to("elbow", -1.0, max_vel=1.0, max_effort=8.0),
+    stop_all(),
+])
+jcc = JointCommandController(joint_names)
+goal = jcc.submit(recipe, client="homing")
+out = jcc.tick(servo_state, dt)      # out.command (ServoCommand with .mode), out.defines, out.log
+jcc.result(goal)                      # done | aborted | preempted | stopped | rejected | faulted, + hardstops
+```
+
+Helpers are plain functions returning lists of three primitives (`Command`, `Delay`, `Condition`), so
+a recipe is data any viewer or language reads. A sequence that ends badly holds where the arm is;
+stop and brake are board modes, sent only for a fault, a lost bus or an explicit `stop()`.
+
 ## Packages
 
 | Import | Types |
@@ -165,7 +188,7 @@ name: [docs/DESIGN.md](docs/DESIGN.md), "Comparing trajectories".
 | `robot_msgs.std` | `Header` `ColorRGBA` · a running component's own reports: `LogRecord` `DiagnosticRecord` `Metrics` |
 | `robot_msgs.geometry` | `Vector3` `Point` `Quaternion` `Pose` `Pose2D` `Transform` `Twist` `Wrench` `Accel` `Inertia` `PoseStamped` `TransformStamped` · batch maths in `geometry.rotations` (incl. direct `euler_to_matrix` / `matrix_to_euler`) |
 | `robot_msgs.sensor` | `JointState` `Image` `CameraInfo` `CameraSettings` `PointCloud` `Imu` |
-| `robot_msgs.control` | `ServoState` `ServoCommand` (per-servo `mode`: `SERVO_MODES`) |
+| `robot_msgs.control` | `ServoState` `ServoCommand` (per-servo `mode`: `SERVO_MODES`) · routines as data: `JointCommand`, the primitives `Command` `Delay` `Condition` (+ `Record` `Reduce` `FailWhen`, predicates `InCollision` `TravelEnd` `FollowEnded` `Reached` `Settled` `Stall` `EffortStall` `Elapsed`), `JointCommandSequence`; helper functions in `control.helpers` (`find_hardstop` `move_to` `hold` `stop_all` `follow` `wait_until` `at_once` ...); `JointCommandController` (the one writer to the servos) |
 | `robot_msgs.shape` | `SolidPrimitive` (box, sphere, cylinder, cone, prism: `volume` `inertia` `bounding_box` `contains` `to_mesh`) `Mesh` `Plane` `MeshResource` (a URDF-style file reference; no ROS message) |
 | `robot_msgs.manipulation` | `GraspPose` `Waypoint` `WaypointAction` `CartesianLimits` `NamedPose` `AllowedCollisionMatrix` · `CollisionScene` of `CollisionElement`s (moveit_msgs PlanningScene / CollisionObject; each element tagged scene / object / self, fixed / moving, rigid / deformable, with a `margin` and a `contact` policy, v1 `avoid`; checked and viewed by robot_collision) |
 | `robot_msgs.behavior` | `BTState` (a behaviour tree's node statuses by path, JSON blackboard, tick, clock) |

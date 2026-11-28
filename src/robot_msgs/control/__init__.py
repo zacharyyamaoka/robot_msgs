@@ -3,8 +3,11 @@
 A controller loops: read a `ServoState`, emit a `ServoCommand`. The driver behind the seam (a
 moteus board, a MuJoCo twin, a Damiao or RobStride motor) is the same interface on sim and real.
 
-A routine that is a list of steps (homing, recovery) is a `JointCommandSequence`, run by a
-`JointCommandSequenceController`.
+A routine that is a list of steps (homing, recovery) is a `JointCommandSequence`. Since 0.8 it is written
+as three primitive step kinds (`Command`, `Delay`, `Condition`), built with the helper FUNCTIONS in
+`robot_msgs.control.helpers` (`find_hardstop`, `move_to`, `stop_all`, ...), and run by the
+`JointCommandController`: the one writer to the servos (stop, brake, hold, follow; one writer per joint; hold,
+don't drop). The 0.3 `JointCommandSequenceController` still runs step sequences as before.
 """
 
 from robot_msgs.control.servo_state import ServoState
@@ -14,17 +17,39 @@ from robot_msgs.control.servo_state import ServoState
 from robot_msgs.control.servo_command import SERVO_MODES, ServoCommand
 
 # isort: split
+from robot_msgs.control import helpers
 from robot_msgs.control.joint_command import (
+    ALL_JOINTS,
     MODES,
     DoneWhen,
+    EffortStall,
     Elapsed,
     JointCommand,
     JointCommandSequence,
     JointCommandStep,
     Reached,
     Settled,
-    EffortStall,
     Stall,
+)
+from robot_msgs.control.joint_command_controller import (
+    Event,
+    HardstopReport,
+    JointCommandController,
+    JointCommandResult,
+    JointCommandTick,
+    SampledFollower,
+)
+from robot_msgs.control.primitives import (
+    PRIMITIVES,
+    Command,
+    Condition,
+    Delay,
+    FailWhen,
+    FollowEnded,
+    InCollision,
+    Record,
+    Reduce,
+    TravelEnd,
 )
 from robot_msgs.control.sequence_controller import (
     JointCommandSequenceController,
@@ -33,6 +58,24 @@ from robot_msgs.control.sequence_controller import (
 )
 
 __all__ = [
+    "ALL_JOINTS",
+    "Command",
+    "Condition",
+    "Delay",
+    "Event",
+    "FailWhen",
+    "FollowEnded",
+    "HardstopReport",
+    "InCollision",
+    "JointCommandController",
+    "JointCommandResult",
+    "JointCommandTick",
+    "PRIMITIVES",
+    "Record",
+    "Reduce",
+    "SampledFollower",
+    "TravelEnd",
+    "helpers",
     "MODES",
     "DoneWhen",
     "Elapsed",

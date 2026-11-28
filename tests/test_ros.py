@@ -23,6 +23,17 @@ from robot_msgs.vision import Detection2DArray, ObjectHypothesisWithPose
 UNMAPPED = {
     # capture settings: ROS drivers expose them as parameters, there is no message
     "CameraSettings",
+    # 0.8 joint command primitives (Command / Delay / Condition and their hooks): a homing recipe is
+    # data for the Joint Command Controller, ROS has no message for it (as for JointCommandSequence)
+    "Command",
+    "Delay",
+    "Condition",
+    "InCollision",
+    "TravelEnd",
+    "FollowEnded",
+    "Record",
+    "Reduce",
+    "FailWhen",
     # robot_msgs.fiducial: aruco_msgs / fiducial_msgs / apriltag_msgs are not in rosbags' stock
     # typestore; lowering them is a follow-up, so none of these round-trip through ROS yet
     "FiducialDetection",
@@ -130,7 +141,7 @@ MAPPED = [m for m in EXAMPLES if type(m).__name__ not in UNMAPPED]
 
 def test_catalog_is_split_into_mapped_and_unmapped():
     assert {type(m).__name__ for m in EXAMPLES if type(m).__name__ in UNMAPPED} == UNMAPPED
-    assert len(MAPPED) + 71 == len(EXAMPLES)  # 71: the 0.8 stop/brake ServoCommand example
+    assert len(MAPPED) + 83 == len(EXAMPLES)  # 0.8: +1 stop/brake ServoCommand, +12 joint command primitives
 
 
 @pytest.mark.parametrize("msg", MAPPED, ids=lambda m: type(m).__name__)
