@@ -207,3 +207,42 @@ def test_codec_round_trip_keeps_order_and_lookups():
     assert back.names == ("j1", "j2", "c1")
     assert back.joint_at("fdcanusb:0607623A#12") == "j2"
     assert allclose(back.to_servos(command()), t.to_servos(command()))
+
+
+# ── the same controller code drives two bus bindings; only the table changes ────────────────────────────────
+
+
+def test_same_controller_code_drives_two_bus_bindings_with_only_the_table_changed():
+    """Zach, 2026-11-27: "if I change from Can USB etc. I shouldn't need to change my code". One recipe, one
+    JointCommandController, two bindings that differ only in the JointTable (fdcanusb + CAN 12/13 vs a pi3hat
+    with renumbered ids). The board plant is keyed by servo address, as a bus driver is; the joint-named
+    trajectory and the controller's result are identical on both."""
+    from test_joint_command_controller import Plant  # the one-joint-plant pattern the JCC tests use
+
+    from robot_msgs.control import JointCommandController, JointCommandSequence
+    from robot_msgs.control import helpers as h
+
+    def drive(table: JointTable):
+        servos = tuple(table.key(j) for j in ("j", "k"))
+        plant = Plant(names=servos)
+        jcc = JointCommandController(("j", "k"))
+        jcc.submit(
+            JointCommandSequence(steps=[h.at_once(h.move_to("j", 0.3, 1.0, 3.0), h.move_to("k", -0.2, 1.0, 3.0))]),
+            client="test",
+        )
+        positions = []
+        for k in range(150):
+            state = table.to_joints(plant.read())  # bus -> Arm -> joint names
+            out = jcc.tick(state, 0.0 if k == 0 else 0.01)
+            assert set(out.command.name) <= {"j", "k"}  # the controller never sees a CAN id
+            plant.step(table.to_servos(out.command), {})  # joint names -> Arm -> bus
+            positions.append(np.asarray(state.position, dtype=float).copy())
+        return np.array(positions), jcc.status
+
+    usb = JointTable(bus="fdcanusb:0607623A", joints={"j": Servo(can_id=12, sign=-1), "k": Servo(can_id=13)})
+    pi3hat = JointTable(bus="pi3hat:2", joints={"j": Servo(can_id=41, sign=-1), "k": Servo(can_id=7)})
+    a, status_a = drive(usb)
+    b, status_b = drive(pi3hat)
+    assert np.allclose(a, b)
+    assert abs(a[-1][0] - 0.3) < 0.02 and abs(a[-1][1] + 0.2) < 0.02
+    assert status_a == status_b == "done"
