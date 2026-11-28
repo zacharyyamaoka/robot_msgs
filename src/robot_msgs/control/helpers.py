@@ -20,13 +20,23 @@ A helper that ends by itself (`move_to`, `find_hardstop`, `follow`) carries its 
 ends (`hold`, `velocity`, `effort`) is a bare Command, so pair it with `wait` / `wait_until`. `at_once` runs
 several of them together and waits for all.
 
+Recipe metadata (2026-11-27; it never changes what runs). Every helper stamps the call as written on the primitives
+it returns (`Command.call` = `'find_hardstop("elbow", -1, 0.3, 3.0, 1.2, repeats=3, define=-2.356)'`), and
+`step("Home the elbow", find_hardstop(...), move_by(...))` adds the author's own words (`label`). `outline(recipe)`
+reads both back as rows of label > call > primitives, so a log or a viewer shows the recipe as it was written
+and the three primitive kinds one level lower.
+
 Units are SI (rad, rad/s, N·m, s).
 """
 
 from __future__ import annotations
 
+import dataclasses
+import functools
+import inspect
+import json
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from robot_msgs.control.joint_command import ALL_JOINTS, JointCommand, Reached
@@ -56,29 +66,180 @@ RETOUCH_TRAVEL_BACKOFFS = 4.0
 BACKOFF_REACHED_FRACTION = 0.75
 
 
+# ── recipe metadata: the call as written, the author's label ───────────────────────────────────────────────────
+
+
+def _arg_text(value: Any) -> str:
+    """One argument as it reads in a recipe: `"elbow"`, `0.3`, `InCollision("elbow")`, a nested helper call."""
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, bool) or value is None:
+        return repr(value)
+    if isinstance(value, float):
+        # WHY 6 significant digits: -2.356194490192345 (math.radians(-135)) reads as -2.35619; a recipe line is
+        # for reading, the exact value stays on the JointCommand
+        return repr(float(format(value, ".6g"))) if math.isfinite(value) else repr(value)
+    if isinstance(value, int):
+        return repr(value)
+    if isinstance(value, (list, tuple)):
+        calls = {getattr(item, "call", None) for item in value}
+        if value and all(isinstance(item, (Command, Delay, Condition)) for item in value):
+            # a helper's output passed to another helper (`at_once(move_to(...), ...)`): its own call
+            return (
+                calls.pop() if len(calls) == 1 and "" not in calls else f"[{len(value)} primitives]"
+            )
+        inner = ", ".join(_arg_text(item) for item in value)
+        if isinstance(value, tuple):
+            return f"({inner},)" if len(value) == 1 else f"({inner})"
+        return f"[{inner}]"
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        parts = []
+        for f in dataclasses.fields(value):
+            item = getattr(value, f.name)
+            required = f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING
+            if not required and (
+                (f.default is not dataclasses.MISSING and _same(item, f.default))
+                or item in ((), None)
+            ):
+                continue
+            # a dataclass's required fields come first, so they read positionally; the rest by keyword
+            parts.append(_arg_text(item) if required else f"{f.name}={_arg_text(item)}")
+        return f"{type(value).__name__}({', '.join(parts)})"
+    duration = getattr(value, "duration", None)
+    if duration is not None:  # a trajectory: its numbers do not belong on a recipe line
+        return f"<{type(value).__name__} {float(duration):.2f} s>"
+    return f"<{type(value).__name__}>"
+
+
+def _same(a: Any, b: Any) -> bool:
+    if isinstance(a, float) and isinstance(b, float) and math.isnan(a) and math.isnan(b):
+        return True
+    try:
+        return type(a) is type(b) and bool(a == b)
+    except (TypeError, ValueError):
+        return False
+
+
+def call_text(fn: Callable[..., Any], args: tuple, kwargs: dict[str, Any]) -> str:
+    """`fn(*args, **kwargs)` as it reads in a recipe: positional arguments stay positional, keywords stay
+    keywords, strings in double quotes, floats to 6 significant digits. Left out: `name=` (it is the step name,
+    shown beside the call), keyword arguments at their default, and trailing positional arguments at their default."""
+    parameters = list(inspect.signature(fn).parameters.values())
+    defaults = {p.name: p.default for p in parameters if p.default is not inspect.Parameter.empty}
+    positional = [p for p in parameters if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+    variadic = any(p.kind is p.VAR_POSITIONAL for p in parameters)
+    shown = list(args)
+    while (
+        shown
+        and not variadic
+        and len(shown) <= len(positional)
+        and positional[len(shown) - 1].name in defaults
+        and _same(shown[-1], defaults[positional[len(shown) - 1].name])
+    ):
+        shown.pop()
+    parts = [_arg_text(value) for value in shown]
+    for key, value in kwargs.items():
+        if key == "name" or (key in defaults and _same(value, defaults[key])):
+            continue
+        parts.append(f"{key}={_arg_text(value)}")
+    return f"{fn.__name__}({', '.join(parts)})"
+
+
+def _recipe(fn: Callable[..., list[Primitive]]) -> Callable[..., list[Primitive]]:
+    """Stamp the call as written on every primitive `fn` returns (`call`). The outermost helper wins: a recipe
+    that says `find_hardstop_and_hold(...)` reads so, though `find_hardstop` built its primitives."""
+
+    @functools.wraps(fn)
+    def helper(*args: Any, **kwargs: Any) -> list[Primitive]:
+        primitives = fn(*args, **kwargs)
+        call = call_text(fn, args, kwargs)
+        return [dataclasses.replace(p, call=call) for p in primitives]
+
+    return helper
+
+
+def step(label: str, *parts: Sequence[Primitive]) -> list[Primitive]:
+    """Name a stretch of the recipe in your own words: every primitive of `parts` carries `label`.
+
+        step("Home the elbow", find_hardstop("elbow", -1, 0.3, 3.0, 1.2, define=-2.356),
+                               move_by("elbow", 0.035, 0.3, 3.0))
+
+    Metadata only: the primitives, their order and their step names (`name`, what the controller's log and its
+    timeout reasons say) are unchanged, so a labelled recipe runs exactly as the unlabelled one. Put it
+    outermost (around `at_once`, not inside)."""
+    label = str(label)
+    if not label:
+        raise ValueError(
+            "step needs a label: the words a person reads for this stretch of the recipe"
+        )
+    out: list[Primitive] = []
+    for part in parts:
+        for primitive in [part] if isinstance(part, (Command, Delay, Condition)) else list(part):
+            if not isinstance(primitive, (Command, Delay, Condition)):
+                raise TypeError(
+                    f"step {label!r}: {type(primitive).__name__} is not a Command, Delay or Condition"
+                )
+            out.append(dataclasses.replace(primitive, label=label))
+    return out
+
+
+def outline(recipe: Any) -> list[dict[str, Any]]:
+    """The recipe at the level it was written: one row per run of consecutive primitives that came from the same
+    helper call, as `{"label", "call", "name", "first", "last", "kinds"}` (`first` / `last` index the primitives,
+    inclusive; `kinds` are their class names). `recipe` is a `JointCommandSequence` or a list of primitives.
+
+    A primitive written directly (no helper) is its own row with `call` `""`. Consecutive rows with the same
+    non-empty `label` are one labelled stretch (`step`)."""
+    primitives = list(getattr(recipe, "primitives", recipe))
+    rows: list[dict[str, Any]] = []
+    for index, primitive in enumerate(primitives):
+        call, label = getattr(primitive, "call", ""), getattr(primitive, "label", "")
+        last = rows[-1] if rows else None
+        if last is not None and call and last["call"] == call and last["label"] == label:
+            last["last"] = index
+            last["kinds"].append(type(primitive).__name__)
+            continue
+        rows.append(
+            {
+                "label": label,
+                "call": call,
+                "name": getattr(primitive, "name", ""),
+                "first": index,
+                "last": index,
+                "kinds": [type(primitive).__name__],
+            }
+        )
+    return rows
+
+
 # ── one-Command helpers ────────────────────────────────────────────────────────────────────────────────────────
 
 
+@_recipe
 def limp(*joints: str, name: str = "") -> list[Primitive]:
     """No torque on `joints` (position mode, no target)."""
     return [Command(tuple(JointCommand.limp(j) for j in joints), name=name or "limp")]
 
 
+@_recipe
 def stop(*joints: str, name: str = "") -> list[Primitive]:
     """The board's stop on `joints`: driver off; clears a fault and a watchdog latch."""
     return [Command(tuple(JointCommand.stop(j) for j in joints), name=name or "stop")]
 
 
+@_recipe
 def stop_all(name: str = "") -> list[Primitive]:
     """The board's stop on every joint the controller drives."""
     return [Command((JointCommand.stop(ALL_JOINTS),), name=name or "stop all")]
 
 
+@_recipe
 def brake(*joints: str, name: str = "") -> list[Primitive]:
     """The board's brake on `joints`: windings shorted, passive damping."""
     return [Command(tuple(JointCommand.brake(j) for j in joints), name=name or "brake")]
 
 
+@_recipe
 def hold(
     joint: str, max_effort: float, feedforward_effort: float = 0.0, *, name: str = ""
 ) -> list[Primitive]:
@@ -88,6 +249,7 @@ def hold(
     return [Command((command,), name=name or f"hold {joint}")]
 
 
+@_recipe
 def velocity(
     joint: str, vel: float, max_effort: float, feedforward_effort: float = 0.0, *, name: str = ""
 ) -> list[Primitive]:
@@ -98,6 +260,7 @@ def velocity(
     return [Command((command,), name=name or f"velocity {joint}")]
 
 
+@_recipe
 def effort(
     joint: str, torque: float, max_effort: float | None = None, *, name: str = ""
 ) -> list[Primitive]:
@@ -110,6 +273,7 @@ def effort(
     ]
 
 
+@_recipe
 def define(
     joint: str, position: float, max_effort: float | None = None, *, name: str = ""
 ) -> list[Primitive]:
@@ -122,6 +286,7 @@ def define(
     ]
 
 
+@_recipe
 def set_joint_home(joint: str, position: float, *, name: str = "") -> list[Primitive]:
     """Declare where `joint` is now (its home reference). The same as `define`."""
     return define(joint, position, name=name or f"set {joint} home")
@@ -130,6 +295,7 @@ def set_joint_home(joint: str, position: float, *, name: str = "") -> list[Primi
 # ── helpers that end by themselves ─────────────────────────────────────────────────────────────────────────────
 
 
+@_recipe
 def move_to(
     joint: str,
     position: float,
@@ -152,6 +318,7 @@ def move_to(
     ]
 
 
+@_recipe
 def move_by(
     joint: str,
     distance: float,
@@ -174,6 +341,7 @@ def move_by(
     ]
 
 
+@_recipe
 def follow(
     trajectory: Any,
     max_effort: float | None = None,
@@ -202,11 +370,13 @@ def follow(
     ]
 
 
+@_recipe
 def wait(seconds: float, *, name: str = "") -> list[Primitive]:
     """Wait `seconds`; every joint keeps its last Command."""
     return [Delay(seconds, name=name or f"wait {seconds:g} s")]
 
 
+@_recipe
 def wait_until(
     *predicates: Predicate,
     mode: str = "any",
@@ -226,6 +396,7 @@ def wait_until(
     ]
 
 
+@_recipe
 def at_once(
     *parts: Sequence[Primitive],
     until: Sequence[Predicate] = (),
@@ -248,7 +419,7 @@ def at_once(
             raise ValueError(
                 "at_once takes helpers made of Commands and one plain closing Condition"
             )
-        commands += [p if not name else Command(p.commands, p.reduce, name) for p in body]
+        commands += [p if not name else dataclasses.replace(p, name=name) for p in body]
         if closing is not None:
             waits += list(closing.until)
     if waits:
@@ -261,6 +432,7 @@ def at_once(
 # ── the hard stop ──────────────────────────────────────────────────────────────────────────────────────────────
 
 
+@_recipe
 def find_hardstop(
     joint: str,
     direction: int,
@@ -364,6 +536,7 @@ def find_hardstop(
     return out
 
 
+@_recipe
 def find_hardstop_and_hold(
     joint: str,
     direction: int,
@@ -376,6 +549,7 @@ def find_hardstop_and_hold(
     return find_hardstop(joint, direction, max_vel, max_effort, max_travel, **options)
 
 
+@_recipe
 def verify_hard_stop(
     joint: str,
     n: int,

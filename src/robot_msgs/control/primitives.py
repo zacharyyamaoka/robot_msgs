@@ -22,6 +22,14 @@ Contact is hand-rolled behind ONE call, `InCollision(joint)` = `is_in_collision(
 :1339, "for v1 I prefer to just do hand rolled as we have done so far, while collision detection is
 unstable"): the `Stall` lead rule, or `EffortStall` when `effort` is given, or the controller's `detector`.
 
+Every primitive also carries where it came from in the recipe, so a log or a viewer can show the recipe at
+the level it was written (Zach, 2026-11-27: "we should support adding meta data to the sequence where you can add
+the more semantically meaningful view ... we can kinda look at the lower level but we can also see it at a higher
+level"): `label` is the author's own words for a stretch of the recipe (`helpers.step("Home the elbow", ...)`),
+`call` the helper call as written (`find_hardstop("elbow", -1, 0.3, 3.0, 1.2, define=-2.356)`, stamped by every
+helper), `name` the step name the controller's log and its timeout reasons use. None of the three changes what
+the controller does; `helpers.outline(sequence)` reads them back as label > call > primitives.
+
 Units are SI (rad, rad/s, N·m, s); degrees only in text a human reads.
 """
 
@@ -190,16 +198,21 @@ class Command(Msg):
     """Set each joint in `commands` (one `JointCommand` per joint) from now on. Never waits.
 
     `reduce`, if set, runs first (a repeated hard-stop find's last Command). `name` is the recipe step it
-    came from (the command log's `step`)."""
+    came from (the command log's `step`); `call` the helper call as written and `label` the author's words for
+    this stretch of the recipe (see the module docstring), both metadata only."""
 
     commands: tuple[JointCommand, ...]
     reduce: Reduce | None = None
     name: str = ""
+    call: str = ""
+    label: str = ""
 
     def __post_init__(self) -> None:
         commands = tuple(self.commands)
         set_field(self, "commands", commands)
         set_field(self, "name", str(self.name))
+        set_field(self, "call", str(self.call))
+        set_field(self, "label", str(self.label))
         for command in commands:
             if not isinstance(command, JointCommand):
                 raise TypeError(
@@ -222,14 +235,18 @@ class Command(Msg):
 
 @dataclass(frozen=True, eq=False, repr=False)
 class Delay(Msg):
-    """Wait `seconds`. Every joint keeps its last Command."""
+    """Wait `seconds`. Every joint keeps its last Command. `call` and `label` are metadata, as on `Command`."""
 
     seconds: float
     name: str = ""
+    call: str = ""
+    label: str = ""
 
     def __post_init__(self) -> None:
         set_field(self, "seconds", float(self.seconds))
         set_field(self, "name", str(self.name))
+        set_field(self, "call", str(self.call))
+        set_field(self, "label", str(self.label))
         if not (math.isfinite(self.seconds) and self.seconds >= 0.0):
             raise ValueError(f"Delay.seconds must be finite and >= 0, got {self.seconds!r}")
 
@@ -242,7 +259,8 @@ class Condition(Msg):
     - `timeout` (s): not done by then ends it aborted, reason naming the timeout. `None` derives one when
       the Condition starts: 1.5 x (the longest remaining ramp ÷ its speed, a trajectory's rest, an
       `Elapsed`) + 1 s.
-    - `record`: when it holds, record a joint's measured position (a touch, for `Reduce`)."""
+    - `record`: when it holds, record a joint's measured position (a touch, for `Reduce`).
+    - `call`, `label`: metadata, as on `Command`."""
 
     until: tuple[Predicate, ...]
     mode: Literal["all", "any"] = "all"
@@ -250,6 +268,8 @@ class Condition(Msg):
     timeout: float | None = None
     record: Record | None = None
     name: str = ""
+    call: str = ""
+    label: str = ""
 
     def __post_init__(self) -> None:
         until = tuple(self.until) if isinstance(self.until, (list, tuple)) else (self.until,)
@@ -257,6 +277,8 @@ class Condition(Msg):
         fails = tuple(f if isinstance(f, FailWhen) else FailWhen(f[0], f[1]) for f in self.fail)
         set_field(self, "fail", fails)
         set_field(self, "name", str(self.name))
+        set_field(self, "call", str(self.call))
+        set_field(self, "label", str(self.label))
         if not until:
             raise ValueError(f"Condition {self.name!r} waits on no predicate")
         for predicate in until:

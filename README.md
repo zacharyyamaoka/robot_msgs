@@ -181,6 +181,12 @@ Helpers are plain functions returning lists of three primitives (`Command`, `Del
 a recipe is data any viewer or language reads. A sequence that ends badly holds where the arm is;
 stop and brake are board modes, sent only for a fault, a lost bus or an explicit `stop()`.
 
+Each primitive remembers where it came from in the recipe, as metadata that never changes what runs:
+`call` is the helper call as written (`'find_hardstop("elbow", direction=-1, max_vel=0.3, ...)'`,
+stamped by every helper), and `helpers.step("Home the elbow", find_hardstop(...), move_by(...))` adds
+your own words as `label`. `helpers.outline(recipe)` reads them back as rows of label > call >
+primitives, which is what a log or a viewer shows first, with the three primitive kinds one level lower.
+
 ## Packages
 
 | Import | Types |
