@@ -10,6 +10,8 @@ import math
 import numpy as np
 import pytest
 
+from robot_msgs.trajectory import JointTrajectory
+
 from robot_msgs.control import (
     Command,
     Condition,
@@ -21,11 +23,13 @@ from robot_msgs.control import (
     Reached,
     ServoState,
 )
+from robot_msgs.control import Elapsed, helpers
 from robot_msgs.control.helpers import (
     at_once,
     call_text,
     find_hardstop,
     find_hardstop_and_hold,
+    follow,
     hold,
     move_by,
     move_to,
@@ -102,6 +106,29 @@ def test_predicates_and_nested_helpers_read_as_written() -> None:
         'at_once(move_to("elbow", -1.0, 1.0, 8.0), move_to("shoulder", 0.0, 1.0, 8.0))'
     }
     assert [type(p) for p in together] == [Command, Command, Condition]
+
+
+def test_follow_writes_its_trajectory_short_and_an_unwritable_argument_never_breaks_a_helper() -> (
+    None
+):
+    # the first cut compared a trajectory's arrays and raised, so the controller rejected every follow recipe
+    trajectory = JointTrajectory(
+        t=np.linspace(0.0, 2.0, 5), joint_names=("shoulder", "elbow"), positions=np.zeros((5, 2))
+    )
+    following = follow(trajectory, 8.0, tolerance=0.02)
+    assert [type(p) for p in following] == [Command, Condition]
+    assert following[0].call == "follow(<JointTrajectory 2.00 s>, 8.0, tolerance=0.02)"
+    assert wait_until(Elapsed(duration=0.5))[0].call == "wait_until(Elapsed(0.5))"
+
+    class Unwritable:
+        @property
+        def duration(self) -> float:
+            raise RuntimeError("cannot be read")
+
+    with pytest.raises(RuntimeError):
+        call_text(wait_until, (Unwritable(),), {})
+    stamped = helpers._recipe(lambda thing: wait(0.1))(Unwritable())  # noqa: SLF001
+    assert [type(p) for p in stamped] == [Delay] and stamped[0].call == "<lambda>(...)"
 
 
 def test_step_labels_a_stretch_and_keeps_calls_and_names() -> None:

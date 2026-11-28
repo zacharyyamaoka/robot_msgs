@@ -39,7 +39,8 @@ import math
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from robot_msgs.control.joint_command import ALL_JOINTS, JointCommand, Reached
+from robot_msgs._core import values_equal
+from robot_msgs.control.joint_command import ALL_JOINTS, Elapsed, JointCommand, Reached
 from robot_msgs.control.primitives import (
     HARDSTOP_BACKOFF_RAD,
     HARDSTOP_TOLERANCE_RAD,
@@ -92,32 +93,30 @@ def _arg_text(value: Any) -> str:
         if isinstance(value, tuple):
             return f"({inner},)" if len(value) == 1 else f"({inner})"
         return f"[{inner}]"
+    duration = getattr(value, "duration", None)
+    if duration is not None and not isinstance(value, Elapsed):
+        # a trajectory: its samples do not belong on a recipe line
+        return f"<{type(value).__name__} {float(duration):.2f} s>"
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         parts = []
         for f in dataclasses.fields(value):
             item = getattr(value, f.name)
             required = f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING
+            unset = item is None or (isinstance(item, tuple) and not item)
             if not required and (
-                (f.default is not dataclasses.MISSING and _same(item, f.default))
-                or item in ((), None)
+                unset or (f.default is not dataclasses.MISSING and _same(item, f.default))
             ):
                 continue
             # a dataclass's required fields come first, so they read positionally; the rest by keyword
             parts.append(_arg_text(item) if required else f"{f.name}={_arg_text(item)}")
         return f"{type(value).__name__}({', '.join(parts)})"
-    duration = getattr(value, "duration", None)
-    if duration is not None:  # a trajectory: its numbers do not belong on a recipe line
-        return f"<{type(value).__name__} {float(duration):.2f} s>"
     return f"<{type(value).__name__}>"
 
 
 def _same(a: Any, b: Any) -> bool:
     if isinstance(a, float) and isinstance(b, float) and math.isnan(a) and math.isnan(b):
         return True
-    try:
-        return type(a) is type(b) and bool(a == b)
-    except (TypeError, ValueError):
-        return False
+    return type(a) is type(b) and values_equal(a, b)
 
 
 def call_text(fn: Callable[..., Any], args: tuple, kwargs: dict[str, Any]) -> str:
@@ -152,7 +151,12 @@ def _recipe(fn: Callable[..., list[Primitive]]) -> Callable[..., list[Primitive]
     @functools.wraps(fn)
     def helper(*args: Any, **kwargs: Any) -> list[Primitive]:
         primitives = fn(*args, **kwargs)
-        call = call_text(fn, args, kwargs)
+        try:
+            call = call_text(fn, args, kwargs)
+        except Exception:  # noqa: BLE001
+            # WHY swallow: the call text is for reading. An argument it cannot write (the first cut raised on a
+            # trajectory's arrays and every follow recipe was rejected) must never stop the recipe itself
+            call = f"{fn.__name__}(...)"
         return [dataclasses.replace(p, call=call) for p in primitives]
 
     return helper
