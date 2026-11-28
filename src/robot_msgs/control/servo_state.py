@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 
 from robot_msgs._core import Array, Msg, frozen_array, optional_array, set_field
+from robot_msgs.control.ground_truth import GroundTruth
 from robot_msgs.sensor import JointState
 from robot_msgs.std import Header
 
@@ -29,6 +30,11 @@ class ServoState(Msg):
     one driver, so a dropped or repeated sample shows as a gap or a repeat.
     `temperature` is °C (as ROS sensor_msgs/Temperature), `voltage` V, `fault` the board's integer
     fault code per servo with 0 = no fault. Unmeasured fields are `None`.
+
+    `truth` (additive, 2026-11-28): a simulator's `GroundTruth` for the same instant, joint-named and in the joint
+    frame; `None` on real hardware. Controllers never read it (they see what a real arm gives them); a test or
+    a metric does, and on real it finds `None` rather than a different API (Zach, 2026-11-28: "if you're in
+    simulator you should include the ground truth as well... switch onto real it's kinda like the 1 line switch").
     """
 
     name: tuple[str, ...]
@@ -40,8 +46,11 @@ class ServoState(Msg):
     fault: Array | None = None
     seq: int = 0
     header: Header = field(default_factory=Header)
+    truth: GroundTruth | None = None
 
     def __post_init__(self) -> None:
+        if self.truth is not None and not isinstance(self.truth, GroundTruth):
+            raise TypeError(f"ServoState.truth must be a GroundTruth or None, got {type(self.truth).__name__}")
         names = tuple(str(n) for n in self.name)
         duplicates = sorted({n for n in names if names.count(n) > 1})
         if duplicates:

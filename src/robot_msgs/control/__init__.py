@@ -15,9 +15,12 @@ what each number is (`pos`, `by`, `vel`, `max_tau`, `ff`, ...), a `Joint` that c
 tview-style text lines (`script("elbow> move_by 20deg")`). Same primitives; only `call` reads as written.
 
 A `JointTable` is the thin Arm between them and the bus: joint name -> `Servo` (bus, CAN id,
-sign, offset), so controllers address joints by name and only the table knows a CAN id.
+sign, offset), so controllers address joints by name and only the table knows a CAN id. An `Arm` is that table in
+front of a backend (`ArmDeployment`: ``Arm(UR5E, backend="sim")`` / ``"real"``), and a simulated `ServoState`
+carries the simulator's `GroundTruth` in `truth` (None on real).
 """
 
+from robot_msgs.control.ground_truth import GroundTruth
 from robot_msgs.control.servo_state import ServoState
 
 # isort: split
@@ -27,6 +30,9 @@ from robot_msgs.control.servo_command import SERVO_MODES, ServoCommand
 # isort: split
 # WHY after ServoCommand: joint_table maps ServoCommand / ServoState.
 from robot_msgs.control.joint_table import JointTable, Servo, parse_servo_key, servo_key
+
+# isort: split
+from robot_msgs.control.arm import Arm, ArmBackend, ArmDeployment, BackendUnavailable
 
 # isort: split
 from robot_msgs.control import helpers
@@ -77,6 +83,11 @@ from robot_msgs.control import recipe
 
 __all__ = [
     "ALL_JOINTS",
+    "Arm",
+    "ArmBackend",
+    "ArmDeployment",
+    "BackendUnavailable",
+    "GroundTruth",
     "Command",
     "Condition",
     "ControllerManager",

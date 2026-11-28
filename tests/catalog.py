@@ -29,6 +29,7 @@ from robot_msgs.control import (
     Elapsed,
     FailWhen,
     FollowEnded,
+    GroundTruth,
     InCollision,
     JointCommand,
     JointCommandSequence,
@@ -387,6 +388,23 @@ EXAMPLES = [
         state_seq=812,
         header=HEADER.replace(stamp=HEADER.stamp + 0.0021),
     ),
+    # WHY a second ServoState (2026-11-28): a simulated sample carries the simulator's GroundTruth (None on real)
+    ServoState(
+        name=NAMES,
+        position=[0.12, 0.2, 0.3],
+        velocity=[0.0, 0.1, 0.0],
+        header=HEADER,
+        truth=GroundTruth(
+            name=NAMES,
+            position=[0.1, 0.2, 0.3],
+            velocity=[0.0, 0.1, 0.0],
+            effort=[0.5, -0.2, 0.0],
+            stop_effort=[0.0, 0.0, -1.5],
+            source="mujoco",
+            header=HEADER,
+        ),
+    ),
+    GroundTruth(name=NAMES, position=[0.1, 0.2, 0.3], source="mujoco", header=HEADER),
     # WHY a second ServoCommand (0.8): a stop, a brake and a board-default gain/cap round-trip too
     ServoCommand(
         name=NAMES,
