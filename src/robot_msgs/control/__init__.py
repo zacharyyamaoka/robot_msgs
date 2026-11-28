@@ -8,6 +8,9 @@ as three primitive step kinds (`Command`, `Delay`, `Condition`), built with the 
 `robot_msgs.control.helpers` (`find_hardstop`, `move_to`, `stop_all`, ...), and run by the
 `JointCommandController`: the one writer to the servos (stop, brake, hold, follow; one writer per joint; hold,
 don't drop). The 0.3 `JointCommandSequenceController` still runs step sequences as before.
+
+A `JointTable` is the thin Arm between them and the bus: joint name -> `Servo` (bus, CAN id,
+sign, offset), so controllers address joints by name and only the table knows a CAN id.
 """
 
 from robot_msgs.control.servo_state import ServoState
@@ -15,6 +18,10 @@ from robot_msgs.control.servo_state import ServoState
 # isort: split
 # WHY after ServoState: servo_command imports ServoState for `from_state`.
 from robot_msgs.control.servo_command import SERVO_MODES, ServoCommand
+
+# isort: split
+# WHY after ServoCommand: joint_table maps ServoCommand / ServoState.
+from robot_msgs.control.joint_table import JointTable, Servo, parse_servo_key, servo_key
 
 # isort: split
 from robot_msgs.control import helpers
@@ -74,6 +81,7 @@ __all__ = [
     "JointCommandController",
     "JointCommandResult",
     "JointCommandTick",
+    "JointTable",
     "ManagerTick",
     "PRIMITIVES",
     "Record",
@@ -91,10 +99,13 @@ __all__ = [
     "JointController",
     "Reached",
     "SERVO_MODES",
+    "Servo",
     "ServoCommand",
     "ServoState",
     "Settled",
     "EffortStall",
     "Stall",
     "StepEvent",
+    "parse_servo_key",
+    "servo_key",
 ]

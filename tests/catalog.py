@@ -33,9 +33,11 @@ from robot_msgs.control import (
     JointCommand,
     JointCommandSequence,
     JointCommandStep,
+    JointTable,
     Reached,
     Record,
     Reduce,
+    Servo,
     ServoCommand,
     ServoState,
     Settled,
@@ -394,6 +396,16 @@ EXAMPLES = [
         mode=("stop", "brake", "position"),
         header=HEADER,
     ),
+    # the Arm's joint table (the only place a CAN id or transport key lives)
+    JointTable(
+        bus="fdcanusb:0607623A",
+        joints={
+            "j1": Servo(can_id=11),
+            "j2": Servo(can_id=12, sign=-1, offset_rad=0.3),
+            "c1": Servo(can_id=13, bus="can0", offset_rad=-0.25),
+        },
+    ),
+    Servo(can_id=21, bus="pi3hat:1", sign=-1, offset_rad=1.5),
     JointCommand.to("j2", 1.9, speed=0.3, max_effort=4.0, feedforward_effort=0.5),
     # 0.8: the three primitives, their hooks and predicates (the Joint Command Controller's backend)
     JointCommand.at_velocity("j2", -0.2, max_effort=3.0),

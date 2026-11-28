@@ -87,6 +87,10 @@ UNMAPPED = {
     # robot_msgs.control: ROS has no servo message (ros2_control keeps these inside the process)
     "ServoState",
     "ServoCommand",
+    # the Arm's joint table: per-joint hardware params, which ros2_control keeps in the URDF's
+    # <ros2_control> block, never in a message
+    "JointTable",
+    "Servo",
     # a step routine with completion conditions: no standard ROS message (an action's goal)
     "JointCommand",
     "Elapsed",
@@ -141,7 +145,7 @@ MAPPED = [m for m in EXAMPLES if type(m).__name__ not in UNMAPPED]
 
 def test_catalog_is_split_into_mapped_and_unmapped():
     assert {type(m).__name__ for m in EXAMPLES if type(m).__name__ in UNMAPPED} == UNMAPPED
-    assert len(MAPPED) + 83 == len(EXAMPLES)  # 0.8: +1 stop/brake ServoCommand, +12 joint command primitives
+    assert len(MAPPED) + 85 == len(EXAMPLES)  # 0.8: +1 stop/brake ServoCommand, +12 joint command primitives; +2 JointTable, Servo
 
 
 @pytest.mark.parametrize("msg", MAPPED, ids=lambda m: type(m).__name__)
