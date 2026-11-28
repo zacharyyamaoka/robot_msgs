@@ -1,7 +1,7 @@
-"""Arm + GroundTruth: one loop on sim and real; the truth rides on the simulated state and is never on a real one.
+"""HardwareInterface + GroundTruth: one loop on sim and real; the truth rides on the simulated state and is never on a real one.
 
 WHY (Zach, Daily Note 2026-11-28): "We pass the command seq straight into the command seq controller and tick it;
-that will send the ServoCommands to the Arm. From the arm you can read back the servo state ... in metadata here if
+that will send the ServoCommands to the HardwareInterface. From the arm you can read back the servo state ... in metadata here if
 you're in simulator you should include the ground truth as well ... switch onto real it's kinda like the 1 line switch".
 """
 
@@ -13,8 +13,9 @@ from test_joint_command_controller import Plant  # the suite's PD-on-inertia joi
 
 from robot_msgs._core import from_dict
 from robot_msgs.control import (
-    Arm,
-    ArmDeployment,
+    HardwareInterface,
+    HardwareBackend,
+    HardwareDeployment,
     BackendUnavailable,
     GroundTruth,
     JointCommandController,
@@ -72,15 +73,15 @@ class PlantBackend:
         self.plant.step(command, dict(defines or {}))
 
 
-def deployment(real=None) -> ArmDeployment:
-    return ArmDeployment(
+def deployment(real=None) -> HardwareDeployment:
+    return HardwareDeployment(
         name="two-joint test arm",
         joints=TABLE,
         backends={"sim": PlantBackend, **({"real": real} if real else {})},
     )
 
 
-def run(arm: Arm, sequence: JointCommandSequence, seconds: float = 4.0) -> list[ServoState]:
+def run(arm: HardwareInterface, sequence: JointCommandSequence, seconds: float = 4.0) -> list[ServoState]:
     controller = JointCommandController(arm.joint_names)
     controller.submit(sequence)
     states = [arm.read()]
@@ -105,7 +106,7 @@ SEQUENCE = JointCommandSequence(
 
 
 def test_the_loop_runs_joint_named_and_the_backend_sees_only_servo_keys() -> None:
-    arm = Arm(deployment(), backend="sim")
+    arm = HardwareInterface(deployment(), backend="sim")
     states = run(arm, SEQUENCE)
     last = states[-1]
     assert last.name == ("shoulder", "elbow")
@@ -117,7 +118,7 @@ def test_the_loop_runs_joint_named_and_the_backend_sees_only_servo_keys() -> Non
 def test_sim_carries_truth_joint_named_and_it_differs_from_the_measurement_by_the_encoder_offset() -> (
     None
 ):
-    arm = Arm(deployment(), backend="sim")
+    arm = HardwareInterface(deployment(), backend="sim")
     last = run(arm, SEQUENCE)[-1]
     assert isinstance(last.truth, GroundTruth) and last.truth.name == last.name
     assert last.truth.header.stamp == last.header.stamp
@@ -127,7 +128,7 @@ def test_sim_carries_truth_joint_named_and_it_differs_from_the_measurement_by_th
 
 
 def test_a_real_backend_never_hands_truth_up_even_if_its_driver_sets_one() -> None:
-    arm = Arm(deployment(real=lambda table: PlantBackend(table, simulated=False)), backend="real")
+    arm = HardwareInterface(deployment(real=lambda table: PlantBackend(table, simulated=False)), backend="real")
     states = run(arm, SEQUENCE)
     assert not arm.simulated
     assert all(state.truth is None for state in states)
@@ -140,13 +141,13 @@ def test_a_real_backend_that_cannot_open_refuses_cleanly_and_an_unknown_name_lis
         raise BackendUnavailable("no bus here")
 
     with pytest.raises(BackendUnavailable, match="no bus here"):
-        Arm(deployment(real=refuse), backend="real")
+        HardwareInterface(deployment(real=refuse), backend="real")
     with pytest.raises(KeyError, match=r"\['sim'\]"):
-        Arm(deployment(), backend="real")
+        HardwareInterface(deployment(), backend="real")
 
 
 def test_defines_go_to_the_servo_frame() -> None:
-    arm = Arm(deployment(), backend="sim")
+    arm = HardwareInterface(deployment(), backend="sim")
     seen = {}
     arm.backend.write = lambda command, defines=None: seen.update(defines or {})
     arm.write(ServoCommand(name=("shoulder",), position=[0.0]), {"shoulder": 1.25, "elbow": -0.5})
@@ -179,3 +180,10 @@ def test_servo_state_truth_is_optional_typed_and_round_trips() -> None:
     old = plain.to_dict()
     old.pop("truth", None)
     assert from_dict(old) == plain
+
+
+def test_arm_names_still_import():
+    """Arm / ArmBackend / ArmDeployment are the pre-2026-11-28 names: the same objects, kept for old callers."""
+    from robot_msgs.control import Arm, ArmBackend, ArmDeployment
+
+    assert Arm is HardwareInterface and ArmBackend is HardwareBackend and ArmDeployment is HardwareDeployment

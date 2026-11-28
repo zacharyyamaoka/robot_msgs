@@ -1,26 +1,26 @@
-"""Arm — the thin box a script talks to: joint-named `ServoCommand` in, joint-named `ServoState` out, on sim or real.
+"""HardwareInterface — the thin box a script talks to: joint-named `ServoCommand` in, joint-named `ServoState` out, on sim or real.
 
-    arm = Arm(UR5E, backend="sim")          # the one-line switch: backend="real" on the rig
+    hw = HardwareInterface(UR5E, backend="sim")           # the one-line switch: backend="real" on the rig
     controller.submit(sequence)
-    state = arm.read()
+    state = hw.read()
     while controller.status == "executing":
-        tick = controller.tick(state, arm.period_s)
-        arm.write(tick.command, tick.defines)
-        state = arm.read()
+        tick = controller.tick(state, hw.period_s)
+        hw.write(tick.command, tick.defines)
+        state = hw.read()
     state.truth                             # GroundTruth on sim, None on real
 
 WHY no middleware (Zach, Daily Note 2026-11-28): "We pass the command seq straight into the command seq controller
-and tick it; that will send the ServoCommands to the Arm. From the arm you can read back the servo state and you
-are good!" The Arm is the `JointTable` (name <-> servo key, sign, offset; robot_sdk docs/joint_controllers_arm.html
+and tick it; that will send the ServoCommands to the HardwareInterface. From the arm you can read back the servo state and you
+are good!" The HardwareInterface is the `JointTable` (name <-> servo key, sign, offset; robot_sdk docs/joint_controllers_arm.html
 P1) in front of a backend; it owns no thread, no clock and no port. like_keras can wrap it as a component later;
 a script needs nothing but this.
 
-- An `ArmDeployment` names one robot: its `JointTable` and, per backend name (``"sim"``, ``"real"``), a factory
-  `(table, **options) -> ArmBackend`. robot_msgs never imports a simulator or a bus driver: the deployment's owner passes them
+- An `HardwareDeployment` names one robot: its `JointTable` and, per backend name (``"sim"``, ``"real"``), a factory
+  `(table, **options) -> HardwareBackend`. robot_msgs never imports a simulator or a bus driver: the deployment's owner passes them
   in (the layer rule), so a UR5e deployment lives beside its plant, not here.
-- An `ArmBackend` speaks servo keys (``"<bus>#<can_id>"``, `JointTable.addresses()`): `read()` a `ServoState`,
+- An `HardwareBackend` speaks servo keys (``"<bus>#<can_id>"``, `JointTable.addresses()`): `read()` a `ServoState`,
   `write(command, defines)`; `period_s` is its loop period and `simulated` says whether it may carry truth.
-- The Arm maps both ways through the table and enforces one rule: a backend that is not `simulated` never hands a
+- The HardwareInterface maps both ways through the table and enforces one rule: a backend that is not `simulated` never hands a
   `GroundTruth` upward (`ServoState.truth` is `None` on real, always), so a test that asserts on truth cannot pass on
   real by accident.
 """
@@ -35,10 +35,14 @@ from robot_msgs.control.joint_table import JointTable
 from robot_msgs.control.servo_command import ServoCommand
 from robot_msgs.control.servo_state import ServoState
 
+# WHY HardwareInterface and not Arm (Zach, Daily Note 2026-11-28): "I want the type though to not be Arm, but instead be
+# HardwareInterface. Arm is just like a semantic meaning, don't mix into the back end implementation... Arm is not gonna
+# scale to Hand, Cell, etc." The same type fronts an arm, a hand, a rack station or a whole cell (a combined JointTable).
+
 
 @runtime_checkable
-class ArmBackend(Protocol):
-    """What drives the servos behind an Arm: a MuJoCo plant, a moteus bus, a vendor SDK. Servo-keyed both ways."""
+class HardwareBackend(Protocol):
+    """What drives the servos behind an HardwareInterface: a MuJoCo plant, a moteus bus, a vendor SDK. Servo-keyed both ways."""
 
     simulated: bool
     period_s: float
@@ -53,36 +57,36 @@ class BackendUnavailable(RuntimeError):
 
 
 @dataclass(frozen=True)
-class ArmDeployment:
-    """One robot: `name`, its `JointTable`, and per backend name a factory `(table, **options) -> ArmBackend`."""
+class HardwareDeployment:
+    """One robot: `name`, its `JointTable`, and per backend name a factory `(table, **options) -> HardwareBackend`."""
 
     name: str
     joints: JointTable
-    backends: Mapping[str, Callable[..., ArmBackend]] = field(default_factory=dict)
+    backends: Mapping[str, Callable[..., HardwareBackend]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not isinstance(self.joints, JointTable):
             raise TypeError(
-                f"ArmDeployment.joints must be a JointTable, got {type(self.joints).__name__}"
+                f"HardwareDeployment.joints must be a JointTable, got {type(self.joints).__name__}"
             )
         object.__setattr__(self, "backends", dict(self.backends))
 
 
-class Arm:
+class HardwareInterface:
     """A deployment opened on one backend: `read()` / `write()` joint-named; see the module docstring.
 
-    `Arm(deployment, backend="sim", **options)` builds the backend from the deployment (`options` go to its factory:
+    `HardwareInterface(deployment, backend="sim", **options)` builds the backend from the deployment (`options` go to its factory:
     the simulated world, a seed; give every backend the same ones so the switch stays one word);
-    `Arm(table, backend=<an ArmBackend>)` takes one directly (a test's loopback, a backend you built yourself).
+    `HardwareInterface(table, backend=<an HardwareBackend>)` takes one directly (a test's loopback, a backend you built yourself).
     """
 
     def __init__(
         self,
-        deployment: ArmDeployment | JointTable,
-        backend: str | ArmBackend = "sim",
+        deployment: HardwareDeployment | JointTable,
+        backend: str | HardwareBackend = "sim",
         **options: Any,
     ) -> None:
-        if isinstance(deployment, ArmDeployment):
+        if isinstance(deployment, HardwareDeployment):
             table = deployment.joints
             self.name = deployment.name
         elif isinstance(deployment, JointTable):
@@ -90,12 +94,12 @@ class Arm:
             self.name = ""
         else:
             raise TypeError(
-                f"Arm takes an ArmDeployment or a JointTable, got {type(deployment).__name__}"
+                f"HardwareInterface takes an HardwareDeployment or a JointTable, got {type(deployment).__name__}"
             )
         if isinstance(backend, str):
-            if not isinstance(deployment, ArmDeployment):
+            if not isinstance(deployment, HardwareDeployment):
                 raise TypeError(
-                    "a backend named by a string needs an ArmDeployment (a JointTable has no backends)"
+                    "a backend named by a string needs an HardwareDeployment (a JointTable has no backends)"
                 )
             factories = deployment.backends
             if backend not in factories:
@@ -111,9 +115,9 @@ class Arm:
                 )
             self.backend_name = type(backend).__name__
             built = backend
-        if not isinstance(built, ArmBackend):
+        if not isinstance(built, HardwareBackend):
             raise TypeError(
-                f"backend {self.backend_name!r} is not an ArmBackend (read, write, period_s, simulated)"
+                f"backend {self.backend_name!r} is not an HardwareBackend (read, write, period_s, simulated)"
             )
         self.joints = table
         self.backend = built
@@ -157,14 +161,14 @@ class Arm:
         if callable(close):
             close()
 
-    def __enter__(self) -> Arm:
+    def __enter__(self) -> HardwareInterface:
         return self
 
     def __exit__(self, *exc: Any) -> None:
         self.close()
 
     def __repr__(self) -> str:
-        return f"Arm({self.name or 'table'!r}, backend={self.backend_name!r}, joints={list(self.joint_names)})"
+        return f"HardwareInterface({self.name or 'table'!r}, backend={self.backend_name!r}, joints={list(self.joint_names)})"
 
 
-__all__ = ["Arm", "ArmBackend", "ArmDeployment", "BackendUnavailable"]
+__all__ = ["HardwareInterface", "HardwareBackend", "HardwareDeployment", "BackendUnavailable"]
