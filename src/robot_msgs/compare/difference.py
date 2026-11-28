@@ -278,7 +278,8 @@ def servo_command_error(
 ) -> ServoCommandTrajectory:
     """Per-servo ``reference - measured`` for positions and every optional target both carry
     (a NaN "no target" stays NaN and is skipped by the statistics). The ``latency`` channel, when
-    both have it, is differenced like any shared float channel."""
+    both have it, is differenced like any shared float channel. `mode` is a code, not a quantity:
+    the measured run's modes are copied, never differenced (as `servo_state_error`'s fault)."""
     return ServoCommandTrajectory(
         t=measured.t,
         joint_names=measured.joint_names,
@@ -288,6 +289,7 @@ def servo_command_error(
         stiffness=_minus(reference_at.stiffness, measured.stiffness),
         damping=_minus(reference_at.damping, measured.damping),
         max_effort=_minus(reference_at.max_effort, measured.max_effort),
+        mode=measured.mode,
         channels=channel_errors(reference_at, measured),
         header=measured.header,
     )

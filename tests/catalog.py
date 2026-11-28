@@ -170,6 +170,7 @@ SERVO_COMMANDS = ServoCommandTrajectory.from_servo_commands(
             velocity=[0.1, 0.0, -0.1],
             stiffness=[30.0, 30.0, 5.0],
             state_stamp=None if k == 0 else HEADER.stamp + 0.01 * k - 0.002,
+            mode=None if k < 3 else ("stop", "position", "brake"),
             header=HEADER.replace(stamp=HEADER.stamp + 0.01 * k),
         )
         for k in range(6)

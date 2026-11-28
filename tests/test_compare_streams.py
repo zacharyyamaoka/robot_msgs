@@ -165,6 +165,29 @@ def test_from_servo_commands_records_latency_and_command_at_restores_it():
     assert ServoCommandTrajectory.from_servo_commands(commands[:1]).channels == {}
 
 
+def test_servo_command_modes_round_trip_through_a_recorded_stream():
+    """WHY: before the mode column a recorded stop or brake came back as a position command."""
+    modes = [None, ("stop", "position"), ("position", "brake"), None]
+    commands = [
+        ServoCommand(
+            name=NAMES, position=[0.1 * k, 0.0], mode=mode, header=Header(stamp=EPOCH + 0.01 * k)
+        )
+        for k, mode in enumerate(modes)
+    ]
+    traj = ServoCommandTrajectory.from_servo_commands(commands)
+    assert traj.mode.tolist() == [[0, 0], [1, 0], [0, 2], [0, 0]]
+    assert traj.command_at(0.01).mode == ("stop", "position")
+    assert traj.command_at(0.025).mode == ("position", "brake")  # held, never interpolated
+    assert traj.select(["j2"]).command_at(0.02).mode == ("brake",)
+    reordered = commands[1].replace(name=NAMES[::-1], position=[0.0, 0.1], mode=("position", "stop"))
+    assert ServoCommandTrajectory.from_servo_commands([commands[0], reordered]).mode[1].tolist() == [1, 0]
+    assert ServoCommandTrajectory.from_servo_commands([commands[0]]).mode is None  # absent = position
+    assert ServoCommandTrajectory.from_servo_commands([commands[0]]).command_at(0.0).mode is None
+    assert compare(traj, traj).error.mode.tolist() == traj.mode.tolist()
+    with pytest.raises(ValueError, match="SERVO_MODES"):
+        traj.replace(mode=np.full((4, 2), 3))
+
+
 # ── ImuTrajectory ────────────────────────────────────────────────────────────
 
 

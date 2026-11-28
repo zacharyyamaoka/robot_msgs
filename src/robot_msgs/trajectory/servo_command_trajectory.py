@@ -7,13 +7,14 @@ Sim and real controllers record it alike, so what each one *asked for* can be co
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar
 
 import numpy as np
 
 from robot_msgs._core import Array
 from robot_msgs.control import ServoCommand
+from robot_msgs.control.servo_command import SERVO_MODES
 from robot_msgs.std import Header
 from robot_msgs.trajectory._joint_columns import (
     check_joint_columns,
@@ -36,6 +37,8 @@ _FIELDS = (  # (field on the trajectory, field on ServoCommand)
     ("damping", "damping"),
     ("max_effort", "max_effort"),
 )
+MODE_CODES: dict[str, int] = {mode: code for code, mode in enumerate(SERVO_MODES)}
+"""`mode` column code per `SERVO_MODES` entry: 0 `position`, 1 `stop`, 2 `brake`."""
 LATENCY = "latency"
 """The channel `from_servo_commands` writes: seconds from the state sample to the command."""
 
@@ -50,6 +53,7 @@ class ServoCommandTrajectoryPoint(TrajectoryPoint):
     stiffness: Array | None = None
     damping: Array | None = None
     max_effort: Array | None = None
+    mode: Array | None = field(default=None, metadata={"dtype": np.int64})
 
 
 @dataclass(frozen=True, eq=False, repr=False, kw_only=True)
@@ -60,6 +64,10 @@ class ServoCommandTrajectory(Trajectory):
     ``latency`` (s) is each command's sensor-to-command latency (``stamp - state_stamp``), NaN for
     an open-loop command; `from_servo_commands` writes it whenever any command names its state.
     WHY a channel, not a field: it is a property of the loop that sent the command, not a target.
+
+    `mode` ``(N, J)`` int is each servo's `ServoCommand.mode` as its `MODE_CODES` code (0 position,
+    1 stop, 2 brake), held between samples (a mode is never interpolated); None = every servo in
+    position. WHY a column: without it a recorded stop or brake came back as a position command.
     """
 
     joint_names: tuple[str, ...]
@@ -69,12 +77,15 @@ class ServoCommandTrajectory(Trajectory):
     stiffness: Array | None = sample(default=None)
     damping: Array | None = sample(default=None)
     max_effort: Array | None = sample(default=None)
+    mode: Array | None = sample(interp="hold", default=None, dtype=np.int64)
 
     point_type: ClassVar[type[TrajectoryPoint]] = ServoCommandTrajectoryPoint
 
     def __post_init__(self) -> None:
         super().__post_init__()
         check_joint_columns(self)
+        if self.mode is not None and ((self.mode < 0) | (self.mode >= len(SERVO_MODES))).any():
+            raise ValueError(f"ServoCommandTrajectory.mode codes must index SERVO_MODES {SERVO_MODES}")
 
     @property
     def n_joints(self) -> int:
@@ -103,6 +114,7 @@ class ServoCommandTrajectory(Trajectory):
             damping=point.damping,
             max_effort=point.max_effort,
             state_stamp=state_stamp,
+            mode=None if point.mode is None else tuple(SERVO_MODES[int(c)] for c in point.mode),
             header=Header(stamp=stamp, frame_id=self.header.frame_id),
         )
 
@@ -111,8 +123,8 @@ class ServoCommandTrajectory(Trajectory):
         cls, commands: Sequence[ServoCommand], **static: object
     ) -> ServoCommandTrajectory:
         """A recorded stream from a log of ServoCommands: stamps become `t`, the first one the
-        header's stamp, every command in the first one's servo order (by name), and the
-        ``latency`` channel when any command names the state it came from."""
+        header's stamp, every command in the first one's servo order (by name), the ``latency``
+        channel when any command names the state it came from, and `mode` when any command sets it."""
         if not commands:
             raise ValueError("from_servo_commands needs at least one ServoCommand")
         names = commands[0].name
@@ -134,6 +146,11 @@ class ServoCommandTrajectory(Trajectory):
             )
         header = Header(stamp=float(stamps[0]), frame_id=commands[0].header.frame_id)
         fields = {name: stacked(attribute) for name, attribute in _FIELDS}
+        if any(c.mode is not None for c in commands):
+            # WHY None counts as all position here (not "set on some but not all"): that is what it means
+            fields["mode"] = np.array(
+                [[MODE_CODES[c.mode_of(name)] for name in names] for c in commands], dtype=np.int64
+            )
         return cls(
             t=stamps - stamps[0],
             joint_names=names,
