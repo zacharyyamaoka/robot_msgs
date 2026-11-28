@@ -25,9 +25,21 @@ Built from the Joint Command Controller track's S011-primitives (ruler v2: 45/45
 and the 1-DOF pendulum) and S010 (ruler v1 28/28); its ramp, Reached and Stall numbers are robot_msgs'
 `JointCommandSequenceController`'s, kept number for number. `JointCommandSequenceController` stays as it was.
 
-Follow: a `follower(trajectory, max_effort)` factory makes the sub-controller for a trajectory (anything with
-`tick(state, dt) -> (ServoCommand, defines)` and `status`, e.g. robot_controllers' JointTrajectoryController);
-the default samples the trajectory (`SampledFollower`).
+Follow, two ways:
+
+- nested (the default): a `follower(trajectory, max_effort)` factory makes the sub-controller for a trajectory
+  (anything with `tick(state, dt) -> (ServoCommand, defines)` and `status`); the default samples the trajectory
+  (`SampledFollower`).
+- composed (`helpers.follow(trajectory, via="jtc")`): the JCC does not play it. Each tick's
+  `JointCommandTick.follows` carries a `FollowRequest` (the trajectory and the joints it lends out) for as long
+  as those joints follow; whoever runs the trajectory controller (the `ControllerManager` does it by name) gives
+  it the trajectory, writes those joints from IT, and reports back with `follow_status(request.id, status,
+  message)` (`running` / `done` / `aborted`, as robot_controllers' JTC's `status` and `message`). The JCC writes
+  no target on those joints meanwhile; the Follow step is done on `done`, fails with the JTC's message on
+  `aborted`, and times out like any Condition. WHY (Zach, 2026-11-27): "I 100% want to chain controllers via
+  composition not nesting... the JointCommandController has wires to the JTC and directly to the servos, and
+  reads feedback back from the JTC and from the servos... you get full access to the JTC but it's just side by
+  side."
 """
 
 from __future__ import annotations
@@ -121,17 +133,38 @@ class JointCommandResult:
 
 
 @dataclass(frozen=True)
+class FollowRequest:
+    """A Follow handed to an external trajectory controller `via`: play `trajectory` on `joints` (t = 0 when the
+    request first appears) under `max_effort` (None = board caps). `id` is unique per follow in this controller:
+    the same request comes back every tick while it runs; report on it with `follow_status(id, ...)`."""
+
+    id: int
+    goal: int
+    via: str
+    trajectory: Any
+    joints: tuple[str, ...]
+    max_effort: float | None = None
+
+
+@dataclass(frozen=True)
 class JointCommandTick:
     """One tick's output: the wire `command` (its `mode` per servo), `defines` (joint -> value declared this
-    tick) and the command viewer's `log` row (`goal`, `step`, `intent` per joint, `pending` conditions)."""
+    tick), the command viewer's `log` row (`goal`, `step`, `intent` per joint, `pending` conditions) and
+    `follows`, the follows lent to an external trajectory controller (their joints carry no target here)."""
 
     command: ServoCommand
     defines: Mapping[str, float]
     log: Mapping[str, Any]
+    follows: tuple[FollowRequest, ...] = ()
 
     @property
     def modes(self) -> tuple[str, ...]:
         return self.command.mode or ("position",) * len(self.command.name)
+
+    @property
+    def followed_joints(self) -> tuple[str, ...]:
+        """The joints an external trajectory controller writes this tick (`follows`' joints)."""
+        return tuple(joint for request in self.follows for joint in request.joints)
 
 
 class SampledFollower:
@@ -323,6 +356,56 @@ class _Follow:
         return f"follow ({self.follower.status}, t={self.clock_s:.2f} of {float(self.trajectory.duration):.2f} s)"
 
 
+class _ExternalFollow:
+    """One trajectory lent to an external trajectory controller (`via`): the JCC only keeps its clock and reads
+    the status that controller reports back; it writes no target on the joints."""
+
+    external = True
+
+    def __init__(
+        self,
+        request_id: int,
+        goal: int,
+        trajectory: Any,
+        joints: tuple[str, ...],
+        max_effort: float | None,
+        via: str,
+        reports: Mapping[int, tuple[str, str]],
+    ) -> None:
+        if set(trajectory.joint_names) != set(joints):
+            trajectory = trajectory.select(joints)
+        self.cap = max_effort
+        self.trajectory = trajectory
+        self.request = FollowRequest(request_id, goal, via, trajectory, tuple(joints), max_effort)
+        self.column = {joint: k for k, joint in enumerate(trajectory.joint_names)}
+        self.last = {joint: float(trajectory.positions[-1][k]) for joint, k in self.column.items()}
+        self.clock_s = 0.0
+        self._reports = reports
+        self.status, self.message = "pending", ""
+
+    @property
+    def ended(self) -> bool:
+        return self.status == "done"
+
+    @property
+    def remaining_s(self) -> float:
+        return max(0.0, float(self.trajectory.duration) - self.clock_s)
+
+    def advance(self, joint_state: Any, dt: float) -> None:
+        self.clock_s += dt
+        self.status, self.message = self._reports.get(self.request.id, (self.status, self.message))
+
+    def wire(self, joint: str) -> tuple[float, float, float, float, float, float]:
+        nan = math.nan
+        return (nan, 0.0, 0.0, 0.0, nan, nan)  # no target: the external controller writes this joint
+
+    def text(self) -> str:
+        return (
+            f"follow via {self.request.via} ({self.status}, t={self.clock_s:.2f} of "
+            f"{float(self.trajectory.duration):.2f} s; {self.request.via} writes this joint)"
+        )
+
+
 class _JointView:
     """The part of a JointState a follower reads, over a ServoState without copying it."""
 
@@ -361,6 +444,8 @@ class _Run:
         previous: Mapping[str, _Drive],
         has_detector: bool,
         follower: Callable[[Any, float | None], Follower],
+        follow_ids: Callable[[], int] | None = None,
+        reports: Mapping[int, tuple[str, str]] | None = None,
     ) -> None:
         self.id = run_id
         self.client = client
@@ -372,6 +457,8 @@ class _Run:
         self._previous = dict(previous)
         self.has_detector = has_detector
         self.follower = follower
+        self._follow_ids = follow_ids or iter(range(1 << 62)).__next__
+        self._reports = {} if reports is None else reports
         self.pc = 0
         self.time = 0.0
         self.ticks = 0
@@ -424,6 +511,12 @@ class _Run:
             id(d.follow): d.follow for d in self.drives.values() if d.mode == "follow"
         }.values():
             follow.advance(joint_state, dt)
+            if getattr(follow, "external", False) and follow.status == "aborted":
+                # WHY fail the sequence, not wait out the timeout: the JTC said why it stopped following
+                via = follow.request.via
+                reason = f"follow via {via} aborted: {follow.message or 'no reason given'}"
+                self.events.append(Event(self.time, "follow", None, reason))
+                self.abort(reason)
         for drive in self.drives.values():
             drive.advance(dt)
         defines: dict[str, float] = {}
@@ -541,20 +634,31 @@ class _Run:
             self._reduce(command, measured, defines)
             if self.status != "running":
                 return
-        follows: dict[int, list[JointCommand]] = {}
+        follows: dict[tuple[int, str | None], list[JointCommand]] = {}
         for joint_command in command.commands:
             if joint_command.mode == "follow":
-                follows.setdefault(id(joint_command.trajectory), []).append(joint_command)
+                key = (id(joint_command.trajectory), joint_command.via)
+                follows.setdefault(key, []).append(joint_command)
                 continue
             targets = self.everyone if joint_command.joint == ALL_JOINTS else (joint_command.joint,)
             for joint in targets:
                 self._apply_one(joint, joint_command, measured, defines)
-        for group in follows.values():
+        for (_, via), group in follows.items():
             joints = tuple(c.joint for c in group)
             caps = {c.max_effort for c in group}
-            follow = _Follow(
-                group[0].trajectory, joints, caps.pop() if len(caps) == 1 else None, self.follower
-            )
+            cap = caps.pop() if len(caps) == 1 else None
+            if via is None:
+                follow = _Follow(group[0].trajectory, joints, cap, self.follower)
+            else:
+                follow = _ExternalFollow(
+                    self._follow_ids(),
+                    self.id,
+                    group[0].trajectory,
+                    joints,
+                    cap,
+                    via,
+                    self._reports,
+                )
             follow.advance(joint_state, 0.0)
             for joint in joints:
                 self.drives[joint] = _Drive("follow", follow=follow)
@@ -860,6 +964,29 @@ class _Run:
             )
         return _HeldAt(measured, drive.max_effort, drive.feedforward, why)
 
+    def lent(self, writers: Mapping[str, Any]) -> list[FollowRequest]:
+        """The follows this sequence has lent out, on the joints it still writes."""
+        out: dict[int, FollowRequest] = {}
+        for joint, drive in self.drives.items():
+            follow = drive.follow
+            if drive.mode == "follow" and getattr(follow, "external", False):
+                if writers.get(joint) is self:
+                    out.setdefault(follow.request.id, follow.request)
+        requests = []
+        for request in out.values():
+            joints = tuple(j for j in request.joints if writers.get(j) is self)
+            if joints != request.joints:
+                request = FollowRequest(
+                    request.id,
+                    request.goal,
+                    request.via,
+                    request.trajectory.select(joints),
+                    joints,
+                    request.max_effort,
+                )
+            requests.append(request)
+        return requests
+
     def pending_text(self) -> tuple[str, ...]:
         current = self.current
         if isinstance(current, Condition):
@@ -921,7 +1048,8 @@ class JointCommandController:
     - `slack` (joint -> `stop` | `brake`): what a faulted joint goes to (default `stop`; brake on a wrist or a
       claw that must not drop, PEP 0047). A board that reports a fault itself always gets `stop`.
     - `detector`: what `is_in_collision(joint)` reads when given (else the hand-rolled Stall / EffortStall rule).
-    - `follower(trajectory, max_effort)`: the trajectory sub-controller for follow commands.
+    - `follower(trajectory, max_effort)`: the trajectory sub-controller for follow commands (a follow with
+      `via` lends its trajectory out instead: `JointCommandTick.follows`, `follow_status`).
     """
 
     def __init__(
@@ -953,6 +1081,8 @@ class JointCommandController:
         self._pending_end: list[tuple[_Run, frozenset[str]]] = []
         self._index: dict[str, int] | None = None
         self._index_names: tuple[str, ...] = ()
+        self._next_follow = 0
+        self._reports: dict[int, tuple[str, str]] = {}
 
     # ── the five calls ─────────────────────────────────────────────────────────────────────────────────────────
 
@@ -1003,6 +1133,8 @@ class JointCommandController:
             previous,
             self._detector is not None,
             self._follower,
+            self._new_follow_id,
+            self._reports,
         )
         taken = frozenset(joints)
         for old in [old for old in self._running if taken & set(old.joints)]:
@@ -1045,6 +1177,15 @@ class JointCommandController:
 
     def result(self, goal_id: int) -> JointCommandResult | None:
         return self._results.get(goal_id)
+
+    def follow_status(self, request_id: int, status: str, message: str = "") -> None:
+        """What the external trajectory controller playing `FollowRequest` `request_id` reports: `running`,
+        `done` or `aborted` (with its `message`). Read at the next tick."""
+        self._reports[int(request_id)] = (str(status), str(message))
+
+    def _new_follow_id(self) -> int:
+        self._next_follow += 1
+        return self._next_follow
 
     def tick(
         self, state: Any, dt: float, *, board_mode: Mapping[str, Any] | None = None
@@ -1091,7 +1232,15 @@ class JointCommandController:
                 self._settle(run, measured)
         command, log = self._wire(state, board_mode, clearing)
         self._last_command = command
-        return JointCommandTick(command=command, defines=defines, log=log)
+        follows = tuple(
+            request
+            for run in {id(w): w for w in self._writer.values() if isinstance(w, _Run)}.values()
+            for request in run.lent(self._writer)
+        )
+        live = {request.id for request in follows}
+        for request_id in [r for r in self._reports if r not in live]:
+            del self._reports[request_id]  # WHY: a finished follow's last report must not leak into a new one
+        return JointCommandTick(command=command, defines=defines, log=log, follows=follows)
 
     # ── internals ──────────────────────────────────────────────────────────────────────────────────────────────
 

@@ -75,7 +75,9 @@ class JointCommand(Msg):
     - `define`: "your position is now `position`" (moteus set_output_exact); the joint keeps what it
       was doing, re-framed. With nothing commanded it holds under `max_effort` (None = board cap).
     - `follow`: play `trajectory` (t = 0 when the Command runs) on this joint under `max_effort`
-      (None = board cap). Joints of one Command that share a trajectory follow it together.
+      (None = board cap). Joints of one Command that share a trajectory follow it together. With `via`
+      (a trajectory controller's name, e.g. the `ControllerManager`'s "jtc") the controller does not play
+      it itself: it hands the trajectory to that controller, side by side, and waits on its status.
     """
 
     joint: str
@@ -87,6 +89,7 @@ class JointCommand(Msg):
     feedforward_effort: float = 0.0
     velocity: float | None = None
     trajectory: Any = None  # a JointTrajectory (Any: robot_msgs.trajectory imports control)
+    via: str | None = None  # follow only: the external trajectory controller that plays it
 
     def __post_init__(self) -> None:
         set_field(self, "joint", str(self.joint))
@@ -98,6 +101,10 @@ class JointCommand(Msg):
                 set_field(self, name, float(value))
         set_field(self, "feedforward_effort", float(self.feedforward_effort))
         owner = f"JointCommand {self.joint}"
+        if self.via is not None:
+            set_field(self, "via", str(self.via))
+            if self.mode != "follow" or not self.via:
+                raise ValueError(f"{owner}: via names a trajectory controller, for a follow only")
         if self.joint == ALL_JOINTS and self.mode not in ("limp", "stop", "brake"):
             raise ValueError(f"{owner}: only limp, stop and brake may name every joint")
         if self.mode in ("limp", "stop", "brake"):
@@ -217,10 +224,17 @@ class JointCommand(Msg):
 
     @classmethod
     def follow(
-        cls, joint: str, trajectory: JointTrajectory, *, max_effort: float | None = None
+        cls,
+        joint: str,
+        trajectory: JointTrajectory,
+        *,
+        max_effort: float | None = None,
+        via: str | None = None,
     ) -> JointCommand:
-        """Play `trajectory`'s column for `joint`."""
-        return cls(joint=joint, mode="follow", trajectory=trajectory, max_effort=max_effort)
+        """Play `trajectory`'s column for `joint` (`via`: hand it to that trajectory controller instead)."""
+        return cls(
+            joint=joint, mode="follow", trajectory=trajectory, max_effort=max_effort, via=via
+        )
 
 
 # ── done-when conditions ─────────────────────────────────────────────────────

@@ -34,6 +34,7 @@ from robot_msgs.control.joint_command import (
 )
 from robot_msgs.control.joint_command_controller import (
     Event,
+    FollowRequest,
     HardstopReport,
     JointCommandController,
     JointCommandResult,
@@ -67,6 +68,7 @@ __all__ = [
     "Event",
     "FailWhen",
     "FollowEnded",
+    "FollowRequest",
     "HardstopReport",
     "InCollision",
     "JointCommandController",

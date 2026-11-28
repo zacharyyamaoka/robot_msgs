@@ -178,15 +178,23 @@ def follow(
     trajectory: Any,
     max_effort: float | None = None,
     *,
+    via: str | None = None,
     tolerance: float = ONE_DEGREE,
     timeout: float | None = None,
     name: str = "",
 ) -> list[Primitive]:
     """Play `trajectory` (a `JointTrajectory`; t = 0 now) on every joint it names, under `max_effort` (None =
-    board caps); done at its end with every joint within `tolerance` of its last point."""
-    name = name or "follow"
+    board caps); done at its end with every joint within `tolerance` of its last point.
+
+    `via="jtc"`: hand the trajectory to that trajectory controller (the `ControllerManager` name of, e.g.,
+    robot_controllers' JointTrajectoryController) instead of playing it inside the JointCommandController. The
+    JTC writes those joints side by side for the follow; the step is done when it reports `done` (and the
+    joints are within `tolerance`), fails with its message when it reports `aborted`, and times out as any
+    Condition. WHY (Zach, 2026-11-27): "I 100% want to chain controllers via composition not nesting"."""
+    name = name or ("follow" if via is None else f"follow via {via}")
     commands = tuple(
-        JointCommand.follow(j, trajectory, max_effort=max_effort) for j in trajectory.joint_names
+        JointCommand.follow(j, trajectory, max_effort=max_effort, via=via)
+        for j in trajectory.joint_names
     )
     return [
         Command(commands, name=name),

@@ -20,6 +20,13 @@ to send?"; the Joint Command Controller spec's "a manager that switches, not cli
   between); joints no controller owns hold where they were when their controller let go (hold, don't drop), or are
   limp if nothing ever commanded them. A manager `stop()` overrides every controller until a new goal or switch.
 - `stop(joints=None)`: a manager call, not a controller.
+- A JointCommandController goal with `helpers.follow(trajectory, via="jtc")`: the JCC lends those joints out
+  (`JointCommandTick.follows`); the manager gives the trajectory to the controller registered as `jtc`
+  (`replace_input`), writes those joints from the JTC while the follow lasts, and reports the JTC's `status` /
+  `message` back to the JCC every tick (`follow_status`), so the JCC's Follow step completes, fails or times
+  out on it. The joints stay the JCC's for priorities (a goal that takes them from the JCC ends the lend), and
+  a manager `stop()` still wins next tick. WHY peers, not nesting (Zach, 2026-11-27): "I 100% want to chain
+  controllers via composition not nesting... you get full access to the JTC but it's just side by side."
 
 Controllers are anything with `tick(state, dt)` returning a `JointCommandTick` or a `(ServoCommand, defines)` pair
 (robot_msgs' `JointController` protocol). A JointCommandController gets the `ServoState` (it reads faults and
@@ -52,6 +59,16 @@ class _Slot:
     since: float = math.inf
     last: ServoCommand | None = None
     last_defines: Mapping[str, float] = field(default_factory=dict)
+    lent: set[str] = field(default_factory=set)  # joints a JCC lent this controller for a follow
+
+
+@dataclass
+class _Route:
+    """One JCC follow routed to trajectory controller `via` on `joints`; `refusal` set = reported aborted."""
+
+    via: str
+    joints: tuple[str, ...]
+    refusal: str = ""
 
 
 @dataclass(frozen=True)
@@ -81,6 +98,8 @@ class ControllerManager:
             str, tuple[float, float]
         ] = {}  # joint -> (position, cap) latched when its owner let go
         self._released: set[str] = set()
+        self._lent: dict[str, tuple[str, str]] = {}  # joint -> (lending JCC, trajectory controller)
+        self._routes: dict[tuple[str, int], _Route] = {}  # (JCC name, FollowRequest id) -> route
         self.last_refusal = ""
 
     # ── registry and switching ─────────────────────────────────────────────────────────────────────────────────
@@ -178,9 +197,15 @@ class ControllerManager:
         logs: dict[str, Any] = {}
         defines: dict[str, float] = {}
         joint_state = state.joint_state() if hasattr(state, "joint_state") else state
-        for slot in self._slots.values():
+        # WHY JCCs first: a follow they lend out this tick reaches its trajectory controller in the same tick
+        slots = sorted(
+            self._slots.values(), key=lambda s: not isinstance(s.controller, JointCommandController)
+        )
+        for slot in slots:
             if not slot.active:
                 continue
+            if isinstance(slot.controller, JointCommandController):
+                self._report_follows(slot)
             slot.since += dt
             period = 0.0 if slot.rate_hz is None else 1.0 / slot.rate_hz
             if slot.last is not None and slot.since + 1e-9 < period:
@@ -194,6 +219,8 @@ class ControllerManager:
             if isinstance(out, JointCommandTick):
                 slot.last, slot.last_defines = out.command, out.defines
                 logs[slot.name] = out.log
+                if isinstance(slot.controller, JointCommandController):
+                    self._route_follows(slot, out.follows)
             else:
                 slot.last, slot.last_defines = out[0], out[1]
             defines.update({j: v for j, v in slot.last_defines.items() if j in slot.owned})
@@ -214,6 +241,9 @@ class ControllerManager:
                 modes.append("stop")
                 owner[joint] = "stop"
                 continue
+            lent = self._lent.get(joint)
+            if lent is not None and name == lent[0]:
+                slot, name = self._slots[lent[1]], lent[1]  # the JTC writes it, side by side with the JCC
             if slot is not None and slot.last is not None and joint in slot.last.name:
                 c, k = slot.last, slot.last.name.index(joint)
                 position[i] = c.position[k]
@@ -276,13 +306,95 @@ class ControllerManager:
 
     def _take(self, slot: _Slot, joints: Iterable[str]) -> None:
         """Another controller takes `joints` from `slot` (the rest of slot's joints stay with it)."""
-        slot.owned -= set(joints)
-        if not slot.owned:
+        joints = set(joints)
+        self._unlend(joints, f"taken from {slot.name}")
+        slot.owned -= joints
+        slot.lent -= joints
+        if not slot.owned and not slot.lent:
             slot.active = False
+
+    # ── follows lent by a JointCommandController to a trajectory controller ───────────────────────────────────
+
+    def _report_follows(self, slot: _Slot) -> None:
+        for (jcc, request_id), route in self._routes.items():
+            if jcc != slot.name:
+                continue
+            if route.refusal:
+                slot.controller.follow_status(request_id, "aborted", route.refusal)
+                continue
+            # WHY "running" when it has no status: a controller that never says done times the step out
+            via = self._slots[route.via].controller
+            status = str(getattr(via, "status", "running"))
+            slot.controller.follow_status(request_id, status, str(getattr(via, "message", "")))
+
+    def _route_follows(self, slot: _Slot, follows: tuple[Any, ...]) -> None:
+        live = {request.id: request for request in follows}
+        for key in [key for key in self._routes if key[0] == slot.name and key[1] not in live]:
+            self._unroute(key)
+        for request in follows:
+            key = (slot.name, request.id)
+            route = self._routes.get(key)
+            if route is not None:
+                gone = set(route.joints) - set(request.joints)
+                if gone:
+                    self._unlend(gone, "")
+                    route.joints = tuple(j for j in route.joints if j not in gone)
+                continue
+            self._routes[key] = self._route(slot, request)
+
+    def _route(self, slot: _Slot, request: Any) -> _Route:
+        target = self._slots.get(request.via)
+        joints = tuple(j for j in request.joints if self._owner.get(j) == slot.name)
+        refusal = ""
+        if target is None:
+            refusal = f"no controller {request.via!r} in the manager to follow via"
+        elif isinstance(target.controller, JointCommandController) or not hasattr(
+            target.controller, "replace_input"
+        ):
+            refusal = f"{request.via} takes no trajectory (no replace_input)"
+        elif not set(request.joints) <= set(target.joints):
+            refusal = f"{request.via} does not drive {sorted(set(request.joints) - set(target.joints))}"
+        elif not joints:
+            refusal = f"{slot.name} owns none of {list(request.joints)} in the manager"
+        if refusal:
+            return _Route(request.via, (), refusal)
+        try:
+            target.controller.replace_input(request.trajectory)
+        except Exception as error:  # e.g. robot_controllers' TapeFeeder refusing while it runs
+            return _Route(request.via, (), f"{request.via} refused the trajectory: {error}")
+        mine = set(joints)
+        if target.owned & mine:  # the JTC held some of them itself: they are the JCC's now
+            target.owned -= mine
+        target.active = True
+        target.lent |= mine
+        target.since, target.last = math.inf, None  # WHY: tick it this tick, on the new trajectory
+        for joint in joints:
+            self._lent[joint] = (slot.name, request.via)
+        return _Route(request.via, joints)
+
+    def _unroute(self, key: tuple[str, int]) -> None:
+        route = self._routes.pop(key)
+        self._unlend(set(route.joints), "")
+
+    def _unlend(self, joints: set[str], why: str) -> None:
+        for joint in sorted(joints):
+            lent = self._lent.pop(joint, None)
+            if lent is None:
+                continue
+            target = self._slots[lent[1]]
+            target.lent.discard(joint)
+            if not target.owned and not target.lent:
+                target.active = False
+            if why:
+                for (jcc, _), route in self._routes.items():
+                    if jcc == lent[0] and joint in route.joints and not route.refusal:
+                        route.refusal = f"{joint} {why} by another goal"
 
     def _deactivate(self, slot: _Slot) -> None:
         # WHY latch a hold, not limp: a controller switched out with nothing in its place must not drop the arm
         # (hold, don't drop: PEP 0029 addendum 2); the position is read on the next tick
+        self._unlend(set(slot.lent), f"switched out of {slot.name}")
+        self._unlend({j for j, (jcc, _) in self._lent.items() if jcc == slot.name}, "")
         for joint in slot.owned:
             if self._owner.get(joint) == slot.name:
                 self._owner[joint] = None
