@@ -20,6 +20,12 @@ a script needs nothing but this.
   in (the layer rule), so a UR5e deployment lives beside its plant, not here.
 - An `HardwareBackend` speaks servo keys (``"<bus>#<can_id>"``, `JointTable.addresses()`): `read()` a `ServoState`,
   `write(command, defines)`; `period_s` is its loop period and `simulated` says whether it may carry truth.
+- Connecting to one concrete deployment (Zach, Daily Note 2026-11-28: "you get like a HardwareInterface to a Particular
+  Deployment"): ``HardwareInterface.from_robot_description(rd, MujocoConfig(), config=robot_config, parameters=twin_values)``.
+  The `BackendConfig` (a frozen dataclass per backend: how a run happens) builds the backend from the robot's description `rd`
+  (nominal values), its `RobotConfig` (this copy's `JointTable` and transports) and `parameters` (a twin's calibrated values,
+  or `None` for the nominal ones). robot_msgs owns only that protocol; the simulators and bus drivers that implement it live
+  downstream (sim2real, a rack driver), so the dependency arrow still points from them to here.
 - The HardwareInterface maps both ways through the table and enforces one rule: a backend that is not `simulated` never hands a
   `GroundTruth` upward (`ServoState.truth` is `None` on real, always), so a test that asserts on truth cannot pass on
   real by accident.
@@ -29,11 +35,14 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from robot_msgs.control.joint_table import JointTable
 from robot_msgs.control.servo_command import ServoCommand
 from robot_msgs.control.servo_state import ServoState
+
+if TYPE_CHECKING:
+    from robot_msgs.robot import RobotConfig
 
 # WHY HardwareInterface and not Arm (Zach, Daily Note 2026-11-28): "I want the type though to not be Arm, but instead be
 # HardwareInterface. Arm is just like a semantic meaning, don't mix into the back end implementation... Arm is not gonna
@@ -50,6 +59,20 @@ class HardwareBackend(Protocol):
     def read(self) -> ServoState: ...
 
     def write(self, command: ServoCommand, defines: Mapping[str, float] | None = None) -> Any: ...
+
+
+@runtime_checkable
+class BackendConfig(Protocol):
+    """How a run happens on one backend, as a frozen dataclass (``MujocoConfig(physics_dt_s=...)``, ``RealConfig(adapter=...)``):
+    `build(rd, config, parameters)` returns the `HardwareBackend` for robot description `rd`, robot copy `config` (a `RobotConfig`)
+    and `parameters` (calibrated values, or `None` for the description's nominal ones).
+
+    WHY one config type per backend, the config selecting it (Zach, Daily Note 2026-11-28, pick P2): a timestep means nothing to a
+    real board and an adapter serial nothing to MuJoCo, so each backend's knobs stay its own, and switching backend is switching
+    one value. WHY `parameters` beside `rd` and not written into it (the same note): the description holds the nominal values
+    every copy shares, the twin the calibrated values of this copy; a backend composes the two, never edits the description."""
+
+    def build(self, rd: Any, config: RobotConfig, parameters: Any = None) -> HardwareBackend: ...
 
 
 class BackendUnavailable(RuntimeError):
@@ -121,6 +144,62 @@ class HardwareInterface:
             )
         self.joints = table
         self.backend = built
+        # what from_robot_description connected it to; None when built from a deployment or a table directly
+        self.description: Any = None
+        self.backend_config: BackendConfig | None = None
+        self.config: RobotConfig | None = None
+        self.parameters: Any = None
+
+    @classmethod
+    def from_robot_description(
+        cls,
+        rd: Any,
+        backend: BackendConfig,
+        *,
+        config: RobotConfig | None = None,
+        parameters: Any = None,
+    ) -> HardwareInterface:
+        """A HardwareInterface to one concrete deployment: robot `rd`, copy `config`, on the backend `backend` selects.
+
+            hw = HardwareInterface.from_robot_description(rd, MujocoConfig(), config=PENDULUM_CAN11, parameters=fitted.parameters)
+
+        `config` None takes ``rd.robot_config`` (an attribute, or a method called with no arguments) when rd carries one, and
+        refuses otherwise: a connection is to one copy, never to "a robot" in general. `parameters` None means the description's
+        nominal values. The interface keeps all four (`.description`, `.backend_config`, `.config`, `.parameters`), so what it is
+        connected to is always readable from it.
+
+        WHY a classmethod mirroring sim2real's ``RobotTwin.from_robot_description(rd)`` (Zach, Daily Note 2026-11-28: "sim2real
+        first connects to it with a nominal robottwin then [calibrates], as sim2real lives on top of this"): generate, connect,
+        calibrate. robot_msgs imports no description package and no backend; it reads `rd` only through the backend config.
+        """
+        if not isinstance(backend, BackendConfig):
+            raise TypeError(
+                f"from_robot_description takes a BackendConfig (a config with build(rd, config, parameters)), got {type(backend).__name__}"
+            )
+        if config is None:
+            found = getattr(rd, "robot_config", None)
+            config = found() if callable(found) else found
+            if config is None:
+                raise TypeError(
+                    f"from_robot_description needs config=<RobotConfig>: {type(rd).__name__} carries no robot_config, and a "
+                    "HardwareInterface connects to one robot copy (its JointTable and transports), never to a robot in general"
+                )
+        from robot_msgs.robot import RobotConfig  # noqa: PLC0415  WHY lazy: robot.RobotConfig reads control's JointTable
+
+        if not isinstance(config, RobotConfig):
+            raise TypeError(f"config must be a robot_msgs.robot.RobotConfig, got {type(config).__name__}")
+        built = backend.build(rd, config, parameters)
+        if not isinstance(built, HardwareBackend):
+            close = getattr(built, "close", None)
+            if callable(close):
+                close()
+            raise TypeError(
+                f"{type(backend).__name__}.build returned {type(built).__name__}, not an HardwareBackend (read, write, period_s, simulated)"
+            )
+        hw = cls(config.joints, backend=built)
+        hw.name, hw.backend_name = config.name, type(backend).__name__
+        hw.description, hw.backend_config, hw.config, hw.parameters = rd, backend, config, parameters
+        return hw
 
     @property
     def joint_names(self) -> tuple[str, ...]:
@@ -171,4 +250,4 @@ class HardwareInterface:
         return f"HardwareInterface({self.name or 'table'!r}, backend={self.backend_name!r}, joints={list(self.joint_names)})"
 
 
-__all__ = ["HardwareInterface", "HardwareBackend", "HardwareDeployment", "BackendUnavailable"]
+__all__ = ["HardwareInterface", "HardwareBackend", "HardwareDeployment", "BackendConfig", "BackendUnavailable"]

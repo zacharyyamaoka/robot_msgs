@@ -39,7 +39,9 @@ from robot_msgs.control.joint_table import JointTable, Servo, parse_servo_key, s
 
 # isort: split
 from robot_msgs.control.arm import Arm, ArmBackend, ArmDeployment  # deprecated aliases (2026-11-28)
+from robot_msgs.control.transports import Transports
 from robot_msgs.control.hardware_interface import (
+    BackendConfig,
     BackendUnavailable,
     HardwareBackend,
     HardwareDeployment,
@@ -101,7 +103,9 @@ __all__ = [
     "HardwareInterface",
     "ArmBackend",
     "ArmDeployment",
+    "BackendConfig",
     "BackendUnavailable",
+    "Transports",
     "GroundTruth",
     "Command",
     "Condition",

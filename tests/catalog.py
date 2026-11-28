@@ -35,6 +35,7 @@ from robot_msgs.control import (
     JointCommandSequence,
     JointCommandStep,
     JointTable,
+    Transports,
     Reached,
     Record,
     Reduce,
@@ -291,6 +292,7 @@ EXAMPLES = [
         header=HEADER,
     ),
     RobotConfig(components={"camera": CameraSettings(exposure_time=0.01)}),
+    Transports(buses={"fdcanusb:272813EF": "/dev/serial/by-id/usb-mjbots_fdcanusb_272813EF-if00"}),
     CameraSettings(
         exposure_time=0.008,
         gain=6.0,
